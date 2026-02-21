@@ -30,10 +30,10 @@
           <specular>0.0 0.0 1.0 1</specular>
         </material>
       </visual>
-      <sensor name='ps0' type='gpu_ray'>
+      <sensor name='ps0' type='ray'>
         <pose>1.0 0.2 0 0 0 0.29</pose>
         <ray>
-          <scan><horizontal><samples>1</samples><resolution>1</resolution><min_angle>0</min_angle><max_angle>0</max_angle></horizontal></scan>
+          <scan><horizontal><samples>5</samples><resolution>1</resolution><min_angle>-0.02</min_angle><max_angle>0.02</max_angle></horizontal></scan>
           <range><min>0.05</min><max>2.0</max><resolution>0.01</resolution></range>
         </ray>
         <always_on>1</always_on>
@@ -41,10 +41,10 @@
         <visualize>true</visualize>
         <topic>ps0</topic>
       </sensor>
-      <sensor name='ps1' type='gpu_ray'>
+      <sensor name='ps1' type='ray'>
         <pose>0.8 0.5 0 0 0 0.78</pose>
         <ray>
-          <scan><horizontal><samples>1</samples><resolution>1</resolution><min_angle>0</min_angle><max_angle>0</max_angle></horizontal></scan>
+          <scan><horizontal><samples>5</samples><resolution>1</resolution><min_angle>-0.02</min_angle><max_angle>0.02</max_angle></horizontal></scan>
           <range><min>0.05</min><max>2.0</max><resolution>0.01</resolution></range>
         </ray>
         <always_on>1</always_on>
@@ -52,10 +52,10 @@
         <visualize>true</visualize>
         <topic>ps1</topic>
       </sensor>
-      <sensor name='ps2' type='gpu_ray'>
+      <sensor name='ps2' type='ray'>
         <pose>0.0 0.5 0 0 0 1.57</pose>
         <ray>
-          <scan><horizontal><samples>1</samples><resolution>1</resolution><min_angle>0</min_angle><max_angle>0</max_angle></horizontal></scan>
+          <scan><horizontal><samples>5</samples><resolution>1</resolution><min_angle>-0.02</min_angle><max_angle>0.02</max_angle></horizontal></scan>
           <range><min>0.05</min><max>2.0</max><resolution>0.01</resolution></range>
         </ray>
         <always_on>1</always_on>
@@ -63,10 +63,10 @@
         <visualize>true</visualize>
         <topic>ps2</topic>
       </sensor>
-      <sensor name='ps3' type='gpu_ray'>
+      <sensor name='ps3' type='ray'>
         <pose>-0.8 0.5 0 0 0 2.61</pose>
         <ray>
-          <scan><horizontal><samples>1</samples><resolution>1</resolution><min_angle>0</min_angle><max_angle>0</max_angle></horizontal></scan>
+          <scan><horizontal><samples>5</samples><resolution>1</resolution><min_angle>-0.02</min_angle><max_angle>0.02</max_angle></horizontal></scan>
           <range><min>0.05</min><max>2.0</max><resolution>0.01</resolution></range>
         </ray>
         <always_on>1</always_on>
@@ -74,10 +74,10 @@
         <visualize>true</visualize>
         <topic>ps3</topic>
       </sensor>
-      <sensor name='ps4' type='gpu_ray'>
+      <sensor name='ps4' type='ray'>
         <pose>-0.8 -0.5 0 0 0 3.66</pose>
         <ray>
-          <scan><horizontal><samples>1</samples><resolution>1</resolution><min_angle>0</min_angle><max_angle>0</max_angle></horizontal></scan>
+          <scan><horizontal><samples>5</samples><resolution>1</resolution><min_angle>-0.02</min_angle><max_angle>0.02</max_angle></horizontal></scan>
           <range><min>0.05</min><max>2.0</max><resolution>0.01</resolution></range>
         </ray>
         <always_on>1</always_on>
@@ -85,10 +85,10 @@
         <visualize>true</visualize>
         <topic>ps4</topic>
       </sensor>
-      <sensor name='ps5' type='gpu_ray'>
+      <sensor name='ps5' type='ray'>
         <pose>0.0 -0.5 0 0 0 4.71</pose>
         <ray>
-          <scan><horizontal><samples>1</samples><resolution>1</resolution><min_angle>0</min_angle><max_angle>0</max_angle></horizontal></scan>
+          <scan><horizontal><samples>5</samples><resolution>1</resolution><min_angle>-0.02</min_angle><max_angle>0.02</max_angle></horizontal></scan>
           <range><min>0.05</min><max>2.0</max><resolution>0.01</resolution></range>
         </ray>
         <always_on>1</always_on>
@@ -96,10 +96,10 @@
         <visualize>true</visualize>
         <topic>ps5</topic>
       </sensor>
-      <sensor name='ps6' type='gpu_ray'>
+      <sensor name='ps6' type='ray'>
         <pose>0.8 -0.5 0 0 0 5.49</pose>
         <ray>
-          <scan><horizontal><samples>1</samples><resolution>1</resolution><min_angle>0</min_angle><max_angle>0</max_angle></horizontal></scan>
+          <scan><horizontal><samples>5</samples><resolution>1</resolution><min_angle>-0.02</min_angle><max_angle>0.02</max_angle></horizontal></scan>
           <range><min>0.05</min><max>2.0</max><resolution>0.01</resolution></range>
         </ray>
         <always_on>1</always_on>
@@ -107,16 +107,22 @@
         <visualize>true</visualize>
         <topic>ps6</topic>
       </sensor>
-      <sensor name='ps7' type='gpu_ray'>
+      <sensor name='ps7' type='ray'>
         <pose>1.0 -0.2 0 0 0 5.99</pose>
         <ray>
-          <scan><horizontal><samples>1</samples><resolution>1</resolution><min_angle>0</min_angle><max_angle>0</max_angle></horizontal></scan>
+          <scan><horizontal><samples>5</samples><resolution>1</resolution><min_angle>-0.02</min_angle><max_angle>0.02</max_angle></horizontal></scan>
           <range><min>0.05</min><max>2.0</max><resolution>0.01</resolution></range>
         </ray>
         <always_on>1</always_on>
         <update_rate>10</update_rate>
         <visualize>true</visualize>
         <topic>ps7</topic>
+      </sensor>
+      <sensor name="imu_sensor" type="imu">
+        <always_on>1</always_on>
+        <update_rate>50</update_rate>
+        <visualize>true</visualize>
+        <topic>imu</topic>
       </sensor>
     </link>
 
