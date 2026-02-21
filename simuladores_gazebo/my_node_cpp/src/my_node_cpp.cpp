@@ -39,10 +39,10 @@ public:
             "/model/my_diffdrive_robot/odometry", 10, std::bind(&MyNodeCpp::on_odom, this, _1));
 
         sub_imu = this->create_subscription<sensor_msgs::msg::Imu>(
-            "/model/my_diffdrive_robot/link/chassis/sensor/imu_sensor/imu", 10, std::bind(&MyNodeCpp::on_imu, this, _1));
+            "imu", 10, std::bind(&MyNodeCpp::on_imu, this, _1));
 
         for (int i = 0; i < 8; ++i) {
-            std::string topic = "/model/my_diffdrive_robot/link/chassis/sensor/ps" + std::to_string(i) + "/scan";
+            std::string topic = "ps" + std::to_string(i);
             subs_ps[i] = this->create_subscription<sensor_msgs::msg::LaserScan>(
                 topic, 10, [this, i](const sensor_msgs::msg::LaserScan::SharedPtr msg) {
                     if (!msg->ranges.empty()) {

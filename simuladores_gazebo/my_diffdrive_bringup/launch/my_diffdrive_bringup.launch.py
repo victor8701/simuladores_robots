@@ -59,17 +59,17 @@ def generate_launch_description():
             '/model/my_diffdrive_robot/odometry@nav_msgs/msg/Odometry@gz.msgs.Odometry',
 
             # Proximity Sensors: Gazebo -> ROS
-            '/model/my_diffdrive_robot/link/chassis/sensor/ps0/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            '/model/my_diffdrive_robot/link/chassis/sensor/ps1/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            '/model/my_diffdrive_robot/link/chassis/sensor/ps2/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            '/model/my_diffdrive_robot/link/chassis/sensor/ps3/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            '/model/my_diffdrive_robot/link/chassis/sensor/ps4/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            '/model/my_diffdrive_robot/link/chassis/sensor/ps5/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            '/model/my_diffdrive_robot/link/chassis/sensor/ps6/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            '/model/my_diffdrive_robot/link/chassis/sensor/ps7/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            'ps0@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            'ps1@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            'ps2@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            'ps3@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            'ps4@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            'ps5@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            'ps6@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            'ps7@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
 
             # IMU: Gazebo -> ROS
-            '/model/my_diffdrive_robot/link/chassis/sensor/imu_sensor/imu@sensor_msgs/msg/Imu[gz.msgs.IMU'
+            'imu@sensor_msgs/msg/Imu[gz.msgs.IMU'
         ],
         output='screen'
     )
