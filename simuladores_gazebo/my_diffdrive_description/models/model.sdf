@@ -307,11 +307,11 @@
     </plugin>
 
     <plugin
-      filename="ignition-gazebo-odometry-publisher-system"
+      filename="libignition-gazebo-odometry-publisher-system.so"
       name="ignition::gazebo::systems::OdometryPublisher">
       <odom_frame>odom</odom_frame>
       <robot_base_frame>chassis</robot_base_frame>
-      <odom_topic>odometry</odom_topic>
+      <odom_topic>/model/my_diffdrive_robot/odometry</odom_topic>
     </plugin>
 
   </model>
