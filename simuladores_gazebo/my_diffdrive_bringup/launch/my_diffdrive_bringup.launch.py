@@ -41,7 +41,7 @@ def generate_launch_description():
         arguments=[
             '-name', 'my_diffdrive_robot',
             '-file', sdf_file_path,
-            '-x', '6.5', '-y', '6.5', '-z', '0.2'
+            '-x', '2.5', '-y', '9.5', '-z', '0.2'
         ],
         output='screen'
     )
@@ -55,21 +55,23 @@ def generate_launch_description():
             # Command Velocity: ROS -> Gazebo
             '/model/my_diffdrive_robot/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
             
-            # Odometry: Gazebo -> ROS
-            '/model/my_diffdrive_robot/odometry@nav_msgs/msg/Odometry@gz.msgs.Odometry',
+            # Redundant Odometry & Positioning: Gazebo -> ROS
+            '/model/my_diffdrive_robot/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+            '/model/my_diffdrive_robot/odometry_with_covariance@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+            '/model/my_diffdrive_robot/pose@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V',
 
             # Proximity Sensors: Gazebo -> ROS
-            'ps0@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            'ps1@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            'ps2@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            'ps3@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            'ps4@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            'ps5@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            'ps6@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-            'ps7@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/ps0@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/ps1@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/ps2@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/ps3@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/ps4@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/ps5@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/ps6@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/ps7@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
 
             # IMU: Gazebo -> ROS
-            'imu@sensor_msgs/msg/Imu[gz.msgs.IMU'
+            '/imu@sensor_msgs/msg/Imu[gz.msgs.IMU'
         ],
         output='screen'
     )
