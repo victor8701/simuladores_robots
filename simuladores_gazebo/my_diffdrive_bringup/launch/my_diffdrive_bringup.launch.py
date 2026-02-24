@@ -20,7 +20,7 @@ def generate_launch_description():
     sdf_file_path = os.path.join(pkg_description, 'models', 'model.sdf')
     
     # Path to the World file (Bringup Package)
-    world_file_path = os.path.join(pkg_bringup, 'worlds', 'world.sdf')
+    world_file_path = os.path.join(pkg_bringup, 'worlds', 'world_test_esq_ext.sdf')
 
     # --- NODES ---
 
@@ -41,7 +41,7 @@ def generate_launch_description():
         arguments=[
             '-name', 'my_diffdrive_robot',
             '-file', sdf_file_path,
-            '-x', '2.5', '-y', '9.5', '-z', '0.2'
+            '-x', '12', '-y', '2.7', '-z', '0.2'
         ],
         output='screen'
     )
