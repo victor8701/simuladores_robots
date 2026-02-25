@@ -13,7 +13,7 @@
 using namespace std::placeholders;
 
 // ==================== VELOCIDADES ====================
-#define ROBOT_SPEED      1.2
+#define ROBOT_SPEED      0.8
 #define YAW_KP           2.5
 
 // ==================== UMBRALES DE SENSORES ====================
@@ -74,10 +74,13 @@ public:
                     msg->pose.pose.orientation.w);
             });
 
+        auto qos_sensors = rclcpp::QoS(10);
         for (int i = 0; i < 8; ++i) {
-            std::string topic = "/ps" + std::to_string(i);
+            // Probar scoped (gpu_lidar) y simple (/ps0)
+            std::string topic = "/model/my_diffdrive_robot/link/chassis/sensor/ps" +
+                               std::to_string(i) + "/lidar/scan";
             sub_ps[i] = this->create_subscription<sensor_msgs::msg::LaserScan>(
-                topic, qos, [this, i](const sensor_msgs::msg::LaserScan::SharedPtr msg) {
+                topic, qos_sensors, [this, i](const sensor_msgs::msg::LaserScan::SharedPtr msg) {
                     if (!msg->ranges.empty())
                         ps_val[i] = *std::min_element(msg->ranges.begin(), msg->ranges.end());
                 });
@@ -173,6 +176,28 @@ private:
     // Dashboard — estilo test_sensores.cpp
     // -----------------------------------------------------------------------
     void draw_dashboard() {
+        //{ VMP
+        std::cout << "  Inicio        : X=" << start_x << "  Y=" << start_y << std::endl;
+        std::cout << "  Actual        : X=" << pos_x   << "  Y=" << pos_y   << std::endl;
+        std::cout << "  Objetivo      : X=" << goal_x  << "  Y=" << goal_y  << std::endl;
+
+        /*print_sensor("FRONTAL",  std::min(ps_val[0], ps_val[7]));
+        print_sensor("DIAG-IZQ", ps_val[1]);
+        print_sensor("LATERAL-D",ps_val[2]);
+        print_sensor("TRASERA",  std::min(ps_val[3], ps_val[4]));
+        print_sensor("LATERAL-I",ps_val[5]);
+        print_sensor("DIAG-DER", ps_val[6]);*/
+
+        std::cout << "--------------------------------" << std::endl;
+        std::cout << "FRONTAL: " << std::min(ps_val[0], ps_val[7]) << std::endl;
+        std::cout << "DIAG-IZQ: " << ps_val[1] << std::endl;
+        std::cout << "LATERAL-D: " << ps_val[2] << std::endl;
+        std::cout << "TRASERA: " << std::min(ps_val[3], ps_val[4]) << std::endl;
+        std::cout << "LATERAL-I: " << ps_val[5] << std::endl;
+        std::cout << "DIAG-DER: " << ps_val[6] << std::endl;
+        std::cout << "--------------------------------" << std::endl;
+        //} VMP
+        /* VMP
         double dist_to_goal = std::sqrt(std::pow(goal_x - pos_x, 2) + std::pow(goal_y - pos_y, 2));
 
         clearScreen();
@@ -229,6 +254,7 @@ private:
 
         printColored("────────────────────────────────────────────────────────────────────", COLOR_BLUE);
         std::cout << "  Presiona Ctrl+C para detener" << std::endl;
+        VMP */ 
     }
 
     // -----------------------------------------------------------------------

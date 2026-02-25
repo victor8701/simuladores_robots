@@ -9,7 +9,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 def generate_launch_description():
-    
+
     # --- PATHS ---
     pkg_bringup = get_package_share_directory('my_diffdrive_bringup')
     pkg_description = get_package_share_directory('my_diffdrive_description')
@@ -25,12 +25,12 @@ def generate_launch_description():
     # --- NODES ---
 
     # 1. Launch Gazebo (The World)
-    # We pass the world file directly to the gz_args
+    # SIN headless: sensores gpu_lidar/ray requieren display. Con headless en WSL2 los sensores no publican.
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')
         ),
-        launch_arguments={'gz_args': f'-r --headless-rendering {world_file_path}'}.items(),
+        launch_arguments={'gz_args': f'-r {world_file_path}'}.items(),
     )
 
     # 2. Spawn the Robot (The Model)
@@ -47,20 +47,20 @@ def generate_launch_description():
     )
 
     # 3. ROS-Gazebo Bridge (The Communication)
-    # Bridges the Gazebo topics to ROS 2 topics
+    # Sensors use scoped topics in Gazebo Sim: /model/<model>/link/<link>/sensor/<sensor>/lidar/scan
     bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
         arguments=[
             # Command Velocity: ROS -> Gazebo
             '/model/my_diffdrive_robot/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
-            
-            # Redundant Odometry & Positioning: Gazebo -> ROS
+            # Odometry & Positioning: Gazebo -> ROS
             '/model/my_diffdrive_robot/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
             '/model/my_diffdrive_robot/odometry_with_covariance@nav_msgs/msg/Odometry[gz.msgs.Odometry',
             '/model/my_diffdrive_robot/pose@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V',
-
-            # Proximity Sensors: Gazebo -> ROS
+            # IMU: Gazebo -> ROS
+            '/imu@sensor_msgs/msg/Imu[gz.msgs.IMU',
+            # Proximity Sensors: ambos formatos (simple y scoped)
             '/ps0@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
             '/ps1@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
             '/ps2@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
@@ -69,9 +69,14 @@ def generate_launch_description():
             '/ps5@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
             '/ps6@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
             '/ps7@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
-
-            # IMU: Gazebo -> ROS
-            '/imu@sensor_msgs/msg/Imu[gz.msgs.IMU'
+            '/model/my_diffdrive_robot/link/chassis/sensor/ps0/lidar/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/model/my_diffdrive_robot/link/chassis/sensor/ps1/lidar/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/model/my_diffdrive_robot/link/chassis/sensor/ps2/lidar/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/model/my_diffdrive_robot/link/chassis/sensor/ps3/lidar/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/model/my_diffdrive_robot/link/chassis/sensor/ps4/lidar/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/model/my_diffdrive_robot/link/chassis/sensor/ps5/lidar/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/model/my_diffdrive_robot/link/chassis/sensor/ps6/lidar/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+            '/model/my_diffdrive_robot/link/chassis/sensor/ps7/lidar/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
         ],
         output='screen'
     )
@@ -79,5 +84,5 @@ def generate_launch_description():
     return LaunchDescription([
         gazebo,
         spawn_robot,
-        bridge
+        bridge,
     ])

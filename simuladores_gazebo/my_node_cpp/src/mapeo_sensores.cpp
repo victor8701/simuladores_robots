@@ -33,10 +33,12 @@ public:
                 pos_z = msg->pose.pose.position.z;
             });
 
+        auto qos_sensors = rclcpp::QoS(10);
         for (int i = 0; i < 8; ++i) {
-            std::string topic = "/ps" + std::to_string(i);
+            std::string topic = "/model/my_diffdrive_robot/link/chassis/sensor/ps" +
+                               std::to_string(i) + "/lidar/scan";
             sub_ps[i] = this->create_subscription<sensor_msgs::msg::LaserScan>(
-                topic, qos, [this, i](const sensor_msgs::msg::LaserScan::SharedPtr msg) {
+                topic, qos_sensors, [this, i](const sensor_msgs::msg::LaserScan::SharedPtr msg) {
                     if (!msg->ranges.empty()) ps_val[i] = *std::min_element(msg->ranges.begin(), msg->ranges.end());
                 });
             ps_val[i] = 10.0;
