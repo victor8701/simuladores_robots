@@ -6,5 +6,7 @@ src/my_node_cpp_backup.cpp
 build/
 install/
 log/
+.vscode/
 .cache/
 comandos.txt
+*.json
