@@ -17,13 +17,12 @@ using namespace std::placeholders;
 #define YAW_KP 2.5
 
 // ==================== UMBRALES DE SENSORES ====================
-#define WALL_FRONT_LIMIT 0.75
-#define WALL_SIDE_LIMIT 0.75
-#define LOST_WALL_DIST 1.20 // Distancia maxima para considerar que se ha perdido la pared
+#define WALL_FRONT_LIMIT 0.85
+#define WALL_SIDE_LIMIT 0.85
 
 // ==================== DISTANCIAS ====================
-#define OVERSHOOT_DIST WALL_FRONT_LIMIT // Metros que avanza tras esquina exterior (0.75m)
-#define GOAL_MARGIN 0.50   // Margen de llegada al objetivo (metros)
+#define NEW_WALL_DISTANCE 0.05 // Distancia exacta a la que rodeara la esquina exterior
+#define GOAL_MARGIN 0.50       // Margen de llegada al objetivo (metros)
 
 // ==================== LIMITES DEL MAPA ====================
 #define MAX_X 16.5
@@ -41,7 +40,7 @@ using namespace std::placeholders;
 #define COLOR_MAGENTA "\033[1;35m"
 #define COLOR_WHITE "\033[1;37m"
 
-enum State { LIBRE, SIGUIENDO_PARED, INT_CORNER, OVERSHOOT, FINDING_WALL, META_ALCANZADA };
+enum State { LIBRE, SIGUIENDO_PARED, INT_CORNER, FINDING_WALL, META_ALCANZADA };
 enum WallType { NONE, FRONT, BACK, LEFT, RIGHT };
 enum DirType { STOP, FORWARD, BACKWARD, MOVE_LEFT, MOVE_RIGHT };
 
@@ -98,7 +97,6 @@ public:
     travel_dir = STOP;
     yaw = pos_x = pos_y = 0.0;
     start_x = start_y = goal_x = goal_y = 0.0;
-    over_start_x = over_start_y = over_vx = over_vy = 0.0;
     last_vx = last_vy = 0.0;
   }
 
@@ -168,8 +166,6 @@ private:
       return "SIGUIENDO_PARED";
     case INT_CORNER:
       return "ESQUINA_INTERIOR";
-    case OVERSHOOT:
-      return "OVERSHOOT";
     case FINDING_WALL:
       return "BUSCANDO_PARED";
     case META_ALCANZADA:
@@ -211,15 +207,9 @@ private:
     clearScreen();
 
     // ── Cabecera ──
-    printColored("╔════════════════════════════════════════════════════════════"
-                 "════════╗",
-                 COLOR_CYAN);
-    printColored(
-        "║             MANHATTAN CONTROLLER  —  ROS2 / Gazebo                ║",
-        COLOR_CYAN);
-    printColored("╚════════════════════════════════════════════════════════════"
-                 "════════╝",
-                 COLOR_CYAN);
+    printColored("╔════════════════════════════════════════════════════════════════════╗", COLOR_CYAN);
+    printColored("║             MANHATTAN CONTROLLER  —  ROS2 / Gazebo                 ║", COLOR_CYAN);
+    printColored("╚════════════════════════════════════════════════════════════════════╝", COLOR_CYAN);
     std::cout << std::endl;
 
     // ── Estado ──
@@ -373,7 +363,20 @@ private:
     }
 
     // ── SIGUIENDO_PARED ────────────────────────────────────────────
-    case SIGUIENDO_PARED:
+    case SIGUIENDO_PARED: {
+      // Conservamos la distancia a la pared para calcular la hipotenusa de la esquina
+      if (hugged_wall == FRONT) {
+        double d = std::min(ps_val[0], ps_val[7]);
+        if (d < 1.0) last_wall_dist = d;
+      } else if (hugged_wall == BACK) {
+        double d = std::min(ps_val[3], ps_val[4]);
+        if (d < 1.0) last_wall_dist = d;
+      } else if (hugged_wall == LEFT) {
+        if (ps_val[5] < 1.0) last_wall_dist = ps_val[5]; // LATERAL-I
+      } else if (hugged_wall == RIGHT) {
+        if (ps_val[2] < 1.0) last_wall_dist = ps_val[2]; // LATERAL-D
+      }
+
       // Esquina interior
       if ((wall_F && wall_L) || (wall_F && wall_R) || (wall_B && wall_L) ||
           (wall_B && wall_R)) {
@@ -382,13 +385,51 @@ private:
         break;
       }
 
-      // Esquina exterior: la pared seguida desaparece
-      if ((hugged_wall == FRONT && ps_val[0] > LOST_WALL_DIST && ps_val[7] > LOST_WALL_DIST) ||
-          (hugged_wall == BACK  && ps_val[3] > LOST_WALL_DIST && ps_val[4] > LOST_WALL_DIST) ||
-          (hugged_wall == LEFT  && ps_val[2] > LOST_WALL_DIST) ||
-          (hugged_wall == RIGHT && ps_val[5] > LOST_WALL_DIST)) {
+      // Esquina exterior: calculamos a qué distancia del sensor (hipotenusa) significa 
+      // que ya hemos superado la esquina exactamente por la longitud NEW_WALL_DISTANCE
+      double turn_threshold = std::sqrt(last_wall_dist * last_wall_dist + NEW_WALL_DISTANCE * NEW_WALL_DISTANCE);
+      
+      bool lost_F = (hugged_wall == FRONT && ps_val[0] >= turn_threshold && ps_val[7] >= turn_threshold);
+      bool lost_B = (hugged_wall == BACK  && ps_val[3] >= turn_threshold && ps_val[4] >= turn_threshold);
+      bool lost_L = (hugged_wall == LEFT  && ps_val[5] >= turn_threshold); // LATERAL-I
+      bool lost_R = (hugged_wall == RIGHT && ps_val[2] >= turn_threshold); // LATERAL-D
 
-        start_overshoot(last_vx, last_vy);
+      if (lost_F || lost_B || lost_L || lost_R) {
+        // Giro contextual con pivote en la distancia exacta: rodear la esquina exterior (90 grados)
+        if (hugged_wall == FRONT) { // Pared frontal (+X)
+          if (last_vy > 0) { // Moviéndose a izquierda (+Y) -> Nueva pared Derecha (-Y), ir Adelante (+X)
+            vx_w = ROBOT_SPEED; vy_w = 0;
+            hugged_wall = RIGHT; travel_dir = FORWARD;
+          } else {           // Moviéndose a derecha (-Y) -> Nueva pared Izquierda (+Y), ir Adelante (+X)
+            vx_w = ROBOT_SPEED; vy_w = 0;
+            hugged_wall = LEFT; travel_dir = FORWARD;
+          }
+        } else if (hugged_wall == BACK) { // Pared trasera (-X)
+          if (last_vy > 0) { // Moviéndose a izquierda (+Y) -> Nueva pared Izquierda (+Y), ir Atrás (-X)
+            vx_w = -ROBOT_SPEED; vy_w = 0;
+            hugged_wall = LEFT; travel_dir = BACKWARD;
+          } else {           // Moviéndose a derecha (-Y) -> Nueva pared Derecha (-Y), ir Atrás (-X)
+            vx_w = -ROBOT_SPEED; vy_w = 0;
+            hugged_wall = RIGHT; travel_dir = BACKWARD;
+          }
+        } else if (hugged_wall == LEFT) { // Pared izquierda (+Y)
+          if (last_vx > 0) { // Moviéndose adelante (+X) -> Nueva pared Frontal (+X), ir Izquierda (+Y)
+            vx_w = 0; vy_w = ROBOT_SPEED;
+            hugged_wall = FRONT; travel_dir = MOVE_LEFT;
+          } else {           // Moviéndose atrás (-X) -> Nueva pared Trasera (-X), ir Izquierda (+Y)
+            vx_w = 0; vy_w = ROBOT_SPEED;
+            hugged_wall = BACK; travel_dir = MOVE_LEFT;
+          }
+        } else if (hugged_wall == RIGHT) { // Pared derecha (-Y)
+          if (last_vx > 0) { // Moviéndose adelante (+X) -> Nueva pared Trasera (-X), ir Derecha (-Y)
+            vx_w = 0; vy_w = -ROBOT_SPEED;
+            hugged_wall = BACK; travel_dir = MOVE_RIGHT;
+          } else {           // Moviéndose atrás (-X) -> Nueva pared Frontal (+X), ir Derecha (-Y)
+            vx_w = 0; vy_w = -ROBOT_SPEED;
+            hugged_wall = FRONT; travel_dir = MOVE_RIGHT;
+          }
+        }
+        current_state = FINDING_WALL;
         break;
       }
 
@@ -406,6 +447,7 @@ private:
         }
       }
       break;
+    }
 
     // ── ESQUINA INTERIOR ───────────────────────────────────────────
     case INT_CORNER:
@@ -466,78 +508,17 @@ private:
       }
       break;
 
-    case OVERSHOOT: {
-      double d = std::sqrt(std::pow(pos_x - over_start_x, 2) +
-                           std::pow(pos_y - over_start_y, 2));
-      if (d >= OVERSHOOT_DIST) {
-        // Giro contextual: rodear la esquina exterior (90 grados)
-        if (hugged_wall == FRONT) { // Pared frontal (+X)
-          if (last_vy > 0) { // Moviéndose a izquierda (+Y) -> Nueva pared Derecha (-Y), ir Adelante (+X)
-            vx_w = ROBOT_SPEED; 
-            vy_w = 0;
-            hugged_wall = RIGHT;
-            travel_dir = FORWARD;
-          } else {           // Moviéndose a derecha (-Y) -> Nueva pared Izquierda (+Y), ir Adelante (+X)
-            vx_w = ROBOT_SPEED; 
-            vy_w = 0;
-            hugged_wall = LEFT; 
-            travel_dir = FORWARD;
-          }
-        } else if (hugged_wall == BACK) { // Pared trasera (-X)
-          if (last_vy > 0) { // Moviéndose a izquierda (+Y) -> Nueva pared Izquierda (+Y), ir Atrás (-X)
-            vx_w = -ROBOT_SPEED; 
-            vy_w = 0;
-            hugged_wall = LEFT; 
-            travel_dir = BACKWARD;
-          } else {           // Moviéndose a derecha (-Y) -> Nueva pared Derecha (-Y), ir Atrás (-X)
-            vx_w = -ROBOT_SPEED; 
-            vy_w = 0;
-            hugged_wall = RIGHT; 
-            travel_dir = BACKWARD;
-          }
-        } else if (hugged_wall == LEFT) { // Pared izquierda (+Y)
-          if (last_vx > 0) { // Moviéndose adelante (+X) -> Nueva pared Frontal (+X), ir Izquierda (+Y)
-            vx_w = 0; 
-            vy_w = ROBOT_SPEED;
-            hugged_wall = FRONT; 
-            travel_dir = MOVE_LEFT;
-          } else {           // Moviéndose atrás (-X) -> Nueva pared Trasera (-X), ir Izquierda (+Y)
-            vx_w = 0; 
-            vy_w = ROBOT_SPEED;
-            hugged_wall = BACK; 
-            travel_dir = MOVE_LEFT;
-          }
-        } else if (hugged_wall == RIGHT) { // Pared derecha (-Y)
-          if (last_vx > 0) { // Moviéndose adelante (+X) -> Nueva pared Trasera (-X), ir Derecha (-Y)
-            vx_w = 0; 
-            vy_w = -ROBOT_SPEED;
-            hugged_wall = BACK; 
-            travel_dir = MOVE_RIGHT;
-          } else {           // Moviéndose atrás (-X) -> Nueva pared Frontal (+X), ir Derecha (-Y)
-            vx_w = 0; 
-            vy_w = -ROBOT_SPEED;
-            hugged_wall = FRONT; 
-            travel_dir = MOVE_RIGHT;
-          }
-        }
-        current_state = FINDING_WALL;
-      } else {
-        vx_w = over_vx;
-        vy_w = over_vy;
-      }
-      break;
-    }
-
     // ── BUSCANDO PARED LUEGO DE DAR LA VUELTA A LA ESQUINA ─────────
     case FINDING_WALL: {
       vx_w = last_vx;
       vy_w = last_vy;
 
       bool see_wall = false;
-      if (hugged_wall == FRONT) see_wall = wall_F;
-      else if (hugged_wall == BACK) see_wall = wall_B;
-      else if (hugged_wall == LEFT) see_wall = wall_L;
-      else if (hugged_wall == RIGHT) see_wall = wall_R;
+      double check_limit = WALL_SIDE_LIMIT + 0.50; // Margen razonable para re-engancharse a la pared
+      if (hugged_wall == FRONT) see_wall = (ps_val[0] < check_limit || ps_val[7] < check_limit);
+      else if (hugged_wall == BACK) see_wall = (ps_val[3] < check_limit || ps_val[4] < check_limit);
+      else if (hugged_wall == LEFT) see_wall = (ps_val[5] < check_limit); // LATERAL-I
+      else if (hugged_wall == RIGHT) see_wall = (ps_val[2] < check_limit); // LATERAL-D
 
       // Seguridad por si nos chocamos de frente con la nueva pared
       bool obstacle = false;
@@ -574,13 +555,7 @@ private:
   // -----------------------------------------------------------------------
   // Auxiliares
   // -----------------------------------------------------------------------
-  void start_overshoot(double vx, double vy) {
-    current_state = OVERSHOOT;
-    over_start_x = pos_x;
-    over_start_y = pos_y;
-    over_vx = vx;
-    over_vy = vy;
-  }
+
 
   void stop() { pub_vel->publish(geometry_msgs::msg::Twist()); }
 
@@ -603,9 +578,9 @@ private:
   WallType prev_hugged_wall;
   DirType travel_dir;
 
-  double over_start_x, over_start_y, over_vx, over_vy;
-  double last_vx, last_vy;
+  double last_vx = 0.0, last_vy = 0.0;
   int tick_count = 0; // Contador de ticks para throttle del dashboard
+  double last_wall_dist = 0.75;
 };
 
 // ---------------------------------------------------------------------------
