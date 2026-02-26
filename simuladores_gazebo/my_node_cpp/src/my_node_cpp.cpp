@@ -17,8 +17,8 @@ using namespace std::placeholders;
 #define YAW_KP           2.5
 
 // ==================== UMBRALES DE SENSORES ====================
-#define WALL_FRONT_LIMIT 0.25
-#define WALL_SIDE_LIMIT  0.25
+#define WALL_FRONT_LIMIT 0.75
+#define WALL_SIDE_LIMIT  0.75
 
 // ==================== DISTANCIAS ====================
 #define OVERSHOOT_DIST   0.85    // Metros que avanza tras esquina exterior
