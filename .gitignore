@@ -8,5 +8,6 @@ install/
 log/
 .vscode/
 .cache/
-comandos.txt
+*.txt
 *.json
+*.log

@@ -21,7 +21,8 @@ using namespace std::placeholders;
 #define WALL_SIDE_LIMIT 0.85
 
 // ==================== DISTANCIAS ====================
-#define NEW_WALL_DISTANCE 0.05 // Distancia exacta a la que rodeara la esquina exterior
+#define NEW_WALL_DISTANCE_INF 0.05 // Distancia para esquinas inferiores
+#define NEW_WALL_DISTANCE_SUP 0.20 // Distancia para esquinas superiores
 #define GOAL_MARGIN 0.50       // Margen de llegada al objetivo (metros)
 
 // ==================== LIMITES DEL MAPA ====================
@@ -266,12 +267,12 @@ private:
                 << std::endl;
     };
 
-    print_sensor("FRONTAL", std::min(ps_val[0], ps_val[7]));
-    print_sensor("DIAG-IZQ", ps_val[1]);
-    print_sensor("LATERAL-D", ps_val[2]);
-    print_sensor("TRASERA", std::min(ps_val[3], ps_val[4]));
-    print_sensor("LATERAL-I", ps_val[5]);
-    print_sensor("DIAG-DER", ps_val[6]);
+    print_sensor("FRONTAL (ps3,ps4)", std::min(ps_val[3], ps_val[4]));
+    print_sensor("DIAG-IZQ (ps1)   ", ps_val[1]);
+    print_sensor("LATERAL-D (ps2)  ", ps_val[2]);
+    print_sensor("TRASERA (ps0,ps7)", std::min(ps_val[0], ps_val[7]));
+    print_sensor("LATERAL-I (ps5)  ", ps_val[5]);
+    print_sensor("DIAG-DER (ps6)   ", ps_val[6]);
     std::cout << std::endl;
 
     printColored(
@@ -306,13 +307,10 @@ private:
       return;
     }
 
-    bool wall_F =
-        (ps_val[0] < WALL_FRONT_LIMIT || ps_val[7] < WALL_FRONT_LIMIT);
-    bool wall_B =
-        (ps_val[3] < WALL_FRONT_LIMIT || ps_val[4] < WALL_FRONT_LIMIT);
-    bool wall_L = (ps_val[2] < WALL_SIDE_LIMIT);
-    bool wall_R = (ps_val[5] < WALL_SIDE_LIMIT);
-
+    bool wall_F = (ps_val[3] < WALL_FRONT_LIMIT || ps_val[4] < WALL_FRONT_LIMIT);
+    bool wall_B = (ps_val[0] < WALL_FRONT_LIMIT || ps_val[7] < WALL_FRONT_LIMIT);
+    bool wall_L = (ps_val[5] < WALL_SIDE_LIMIT || ps_val[1] < WALL_SIDE_LIMIT);
+    bool wall_R = (ps_val[2] < WALL_SIDE_LIMIT || ps_val[6] < WALL_SIDE_LIMIT);
     auto twist = geometry_msgs::msg::Twist();
     twist.angular.z = -YAW_KP * yaw;
 
@@ -321,26 +319,20 @@ private:
     switch (current_state) {
     // ── LIBRE ──────────────────────────────────────────────────────
     case LIBRE: {
-      // Eje con MENOR distancia al objetivo (no ir en diagonal)
-      // Bug fix: si un eje ya está dentro del umbral, moverse por el otro
       bool xDone = (std::abs(errX) <= 0.3);
       bool yDone = (std::abs(errY) <= 0.3);
-
       if (!xDone && !yDone) {
-        // Ambos ejes pendientes: primero el de MENOR error
         if (std::abs(errX) < std::abs(errY)) {
-          vx_w = (errX > 0) ? ROBOT_SPEED : -ROBOT_SPEED;
-          travel_dir = (errX > 0) ? FORWARD : BACKWARD;
+          vx_w = (errX > 0) ? ROBOT_SPEED : -ROBOT_SPEED; 
+          travel_dir = (errX > 0) ? FORWARD : BACKWARD; // +X=Alante(Inf), -X=Atras(Sup)
         } else {
-          vy_w = (errY > 0) ? ROBOT_SPEED : -ROBOT_SPEED;
-          travel_dir = (errY > 0) ? MOVE_LEFT : MOVE_RIGHT;
+          vy_w = (errY > 0) ? ROBOT_SPEED : -ROBOT_SPEED; 
+          travel_dir = (errY > 0) ? MOVE_LEFT : MOVE_RIGHT; // +Y=Izquierda(Drcha Mapa), -Y=Derecha(Izq Mapa)
         }
       } else if (!xDone) {
-        // Y ya alcanzado, mover en X
         vx_w = (errX > 0) ? ROBOT_SPEED : -ROBOT_SPEED;
         travel_dir = (errX > 0) ? FORWARD : BACKWARD;
       } else if (!yDone) {
-        // X ya alcanzado, mover en Y
         vy_w = (errY > 0) ? ROBOT_SPEED : -ROBOT_SPEED;
         travel_dir = (errY > 0) ? MOVE_LEFT : MOVE_RIGHT;
       }
@@ -366,10 +358,10 @@ private:
     case SIGUIENDO_PARED: {
       // Conservamos la distancia a la pared para calcular la hipotenusa de la esquina
       if (hugged_wall == FRONT) {
-        double d = std::min(ps_val[0], ps_val[7]);
+        double d = std::min(ps_val[3], ps_val[4]);
         if (d < 1.0) last_wall_dist = d;
       } else if (hugged_wall == BACK) {
-        double d = std::min(ps_val[3], ps_val[4]);
+        double d = std::min(ps_val[0], ps_val[7]);
         if (d < 1.0) last_wall_dist = d;
       } else if (hugged_wall == LEFT) {
         if (ps_val[5] < 1.0) last_wall_dist = ps_val[5]; // LATERAL-I
@@ -387,46 +379,52 @@ private:
 
       // Esquina exterior: calculamos a qué distancia del sensor (hipotenusa) significa 
       // que ya hemos superado la esquina exactamente por la longitud NEW_WALL_DISTANCE
-      double turn_threshold = std::sqrt(last_wall_dist * last_wall_dist + NEW_WALL_DISTANCE * NEW_WALL_DISTANCE);
+      double turn_dist_target;
+      if (hugged_wall == BACK || ((hugged_wall == LEFT || hugged_wall == RIGHT) && last_vx < 0)) {
+        turn_dist_target = NEW_WALL_DISTANCE_SUP;
+      } else { 
+        turn_dist_target = NEW_WALL_DISTANCE_INF;
+      }
+      double turn_threshold = std::sqrt(last_wall_dist * last_wall_dist + turn_dist_target * turn_dist_target);
       
-      bool lost_F = (hugged_wall == FRONT && ps_val[0] >= turn_threshold && ps_val[7] >= turn_threshold);
-      bool lost_B = (hugged_wall == BACK  && ps_val[3] >= turn_threshold && ps_val[4] >= turn_threshold);
-      bool lost_L = (hugged_wall == LEFT  && ps_val[5] >= turn_threshold); // LATERAL-I
-      bool lost_R = (hugged_wall == RIGHT && ps_val[2] >= turn_threshold); // LATERAL-D
+      bool lost_F = (hugged_wall == FRONT && ps_val[3] >= turn_threshold && ps_val[4] >= turn_threshold);
+      bool lost_B = (hugged_wall == BACK  && ps_val[0] >= turn_threshold && ps_val[7] >= turn_threshold);
+      bool lost_L = (hugged_wall == LEFT  && ps_val[5] >= turn_threshold && ps_val[1] >= turn_threshold); // LATERAL-I
+      bool lost_R = (hugged_wall == RIGHT && ps_val[2] >= turn_threshold && ps_val[6] >= turn_threshold); // LATERAL-D
 
       if (lost_F || lost_B || lost_L || lost_R) {
-        // Giro contextual con pivote en la distancia exacta: rodear la esquina exterior (90 grados)
-        if (hugged_wall == FRONT) { // Pared frontal (+X)
-          if (last_vy > 0) { // Moviéndose a izquierda (+Y) -> Nueva pared Derecha (-Y), ir Adelante (+X)
-            vx_w = ROBOT_SPEED; vy_w = 0;
-            hugged_wall = RIGHT; travel_dir = FORWARD;
-          } else {           // Moviéndose a derecha (-Y) -> Nueva pared Izquierda (+Y), ir Adelante (+X)
-            vx_w = ROBOT_SPEED; vy_w = 0;
+        // En exterior corners, giramos envolviendo la pared
+        if (lost_B) { // Pared TRASERA (-X) ended. We are at Sup Map. Corners 1 or 2
+          if (last_vy > 0) { // Iba hacia Drcha del mapa (+Y), passing 2 Sup Drcha Ext
+            vx_w = ROBOT_SPEED; vy_w = 0; // Gira hacia Alante (+X) para bajar a Inf
             hugged_wall = LEFT; travel_dir = FORWARD;
+          } else {           // Iba hacia Izqda del mapa (-Y), passing 1 Sup Izq Ext
+            vx_w = ROBOT_SPEED; vy_w = 0; // Gira hacia Alante (+X) para bajar a Inf
+            hugged_wall = RIGHT; travel_dir = FORWARD;
           }
-        } else if (hugged_wall == BACK) { // Pared trasera (-X)
-          if (last_vy > 0) { // Moviéndose a izquierda (+Y) -> Nueva pared Izquierda (+Y), ir Atrás (-X)
-            vx_w = -ROBOT_SPEED; vy_w = 0;
+        } else if (lost_F) { // Pared FRONTAL (+X) ended. We are at Inf Map. Corners 3 or 4
+          if (last_vy > 0) { // Iba hacia Drcha del mapa (+Y), passing 4 Inf Drcha Ext
+            vx_w = -ROBOT_SPEED; vy_w = 0; // Gira hacia Atras (-X) para subir a Sup
             hugged_wall = LEFT; travel_dir = BACKWARD;
-          } else {           // Moviéndose a derecha (-Y) -> Nueva pared Derecha (-Y), ir Atrás (-X)
-            vx_w = -ROBOT_SPEED; vy_w = 0;
+          } else {           // Iba hacia Izqda del mapa (-Y), passing 3 Inf Izq Ext
+            vx_w = -ROBOT_SPEED; vy_w = 0; // Gira hacia Atras (-X) para subir a Sup
             hugged_wall = RIGHT; travel_dir = BACKWARD;
           }
-        } else if (hugged_wall == LEFT) { // Pared izquierda (+Y)
-          if (last_vx > 0) { // Moviéndose adelante (+X) -> Nueva pared Frontal (+X), ir Izquierda (+Y)
-            vx_w = 0; vy_w = ROBOT_SPEED;
-            hugged_wall = FRONT; travel_dir = MOVE_LEFT;
-          } else {           // Moviéndose atrás (-X) -> Nueva pared Trasera (-X), ir Izquierda (+Y)
-            vx_w = 0; vy_w = ROBOT_SPEED;
-            hugged_wall = BACK; travel_dir = MOVE_LEFT;
-          }
-        } else if (hugged_wall == RIGHT) { // Pared derecha (-Y)
-          if (last_vx > 0) { // Moviéndose adelante (+X) -> Nueva pared Trasera (-X), ir Derecha (-Y)
-            vx_w = 0; vy_w = -ROBOT_SPEED;
-            hugged_wall = BACK; travel_dir = MOVE_RIGHT;
-          } else {           // Moviéndose atrás (-X) -> Nueva pared Frontal (+X), ir Derecha (-Y)
-            vx_w = 0; vy_w = -ROBOT_SPEED;
+        } else if (lost_L) { // Pared LEFT (+Y) ended. Moving along Drcha Map. Corners 2 or 4
+          if (last_vx > 0) { // Iba hacia Alante (+X), passing 4 Inf Drcha Ext
+            vx_w = 0; vy_w = -ROBOT_SPEED; // Gira hacia Izqda map (-Y)
             hugged_wall = FRONT; travel_dir = MOVE_RIGHT;
+          } else {           // Iba hacia Atras (-X), passing 2 Sup Drcha Ext
+            vx_w = 0; vy_w = -ROBOT_SPEED; // Gira hacia Izqda map (-Y)
+            hugged_wall = BACK; travel_dir = MOVE_RIGHT;
+          }
+        } else if (lost_R) { // Pared RIGHT (-Y) ended. Moving along Izqda Map. Corners 1 or 3
+          if (last_vx > 0) { // Iba hacia Alante (+X), passing 3 Inf Izq Ext
+            vx_w = 0; vy_w = ROBOT_SPEED; // Gira hacia Drcha map (+Y)
+            hugged_wall = FRONT; travel_dir = MOVE_LEFT;
+          } else {           // Iba hacia Atras (-X), passing 1 Sup Izq Ext
+            vx_w = 0; vy_w = ROBOT_SPEED; // Gira hacia Drcha map (+Y)
+            hugged_wall = BACK; travel_dir = MOVE_LEFT;
           }
         }
         current_state = FINDING_WALL;
@@ -438,12 +436,14 @@ private:
       if (hugged_wall == FRONT || hugged_wall == BACK) {
         if (std::abs(errY) > 0.3) {
           vy_w = (errY > 0) ? ROBOT_SPEED : -ROBOT_SPEED;
-          travel_dir = (errY > 0) ? MOVE_LEFT : MOVE_RIGHT;
+          vx_w = 0.0;
+          travel_dir = (errY > 0) ? MOVE_LEFT : MOVE_RIGHT; 
         }
       } else {
         if (std::abs(errX) > 0.3) {
           vx_w = (errX > 0) ? ROBOT_SPEED : -ROBOT_SPEED;
-          travel_dir = (errX > 0) ? FORWARD : BACKWARD;
+          vy_w = 0.0;
+          travel_dir = (errX > 0) ? FORWARD : BACKWARD; 
         }
       }
       break;
@@ -451,46 +451,29 @@ private:
 
     // ── ESQUINA INTERIOR ───────────────────────────────────────────
     case INT_CORNER:
-      // Escape según memoria de la pared de procedencia
-      if (wall_F && wall_L) { // SUP-IZQ
-        if (prev_hugged_wall == LEFT) {
-          vx_w = 0;
-          vy_w = -ROBOT_SPEED;
-          travel_dir = MOVE_RIGHT;
-        } else {
-          vx_w = -ROBOT_SPEED;
-          vy_w = 0;
-          travel_dir = BACKWARD;
+      if (wall_F && wall_L) { // 1 Sup izqda
+        if (last_vy < 0) { // Viene de drcha (vy<0 va a izqda) -> robot hacia alante del robot
+          vx_w = -ROBOT_SPEED; vy_w = 0; travel_dir = FORWARD;
+        } else {           // Viene de abajo (vx<0 va a alante) -> robot hacia izqda del robot
+          vx_w = 0; vy_w = -ROBOT_SPEED; travel_dir = MOVE_LEFT;
         }
-      } else if (wall_F && wall_R) { // SUP-DER
-        if (prev_hugged_wall == RIGHT) {
-          vx_w = 0;
-          vy_w = ROBOT_SPEED;
-          travel_dir = MOVE_LEFT;
-        } else {
-          vx_w = -ROBOT_SPEED;
-          vy_w = 0;
-          travel_dir = BACKWARD;
+      } else if (wall_B && wall_R) { // 4 Inf drcha
+        if (last_vy > 0) { // Viene de izqda (vy>0 va a drcha) -> robot hacia atras del robot
+          vx_w = ROBOT_SPEED; vy_w = 0; travel_dir = BACKWARD;
+        } else {           // Viene de arriba (vx>0 va a atras) -> robot hacia drcha del robot 
+          vx_w = 0; vy_w = ROBOT_SPEED; travel_dir = MOVE_RIGHT;
         }
-      } else if (wall_B && wall_L) { // INF-IZQ
-        if (prev_hugged_wall == LEFT) {
-          vx_w = 0;
-          vy_w = -ROBOT_SPEED;
-          travel_dir = MOVE_RIGHT;
-        } else {
-          vx_w = ROBOT_SPEED;
-          vy_w = 0;
-          travel_dir = FORWARD;
+      } else if (wall_F && wall_R) { // 2 Sup drcha
+        if (last_vy > 0) { // Viene de izqda -> robot hacia alante del robot
+          vx_w = -ROBOT_SPEED; vy_w = 0; travel_dir = FORWARD;
+        } else {           // Viene de abajo -> robot hacia drcha del robot
+          vx_w = 0; vy_w = ROBOT_SPEED; travel_dir = MOVE_RIGHT;
         }
-      } else if (wall_B && wall_R) { // INF-DER
-        if (prev_hugged_wall == RIGHT) {
-          vx_w = 0;
-          vy_w = ROBOT_SPEED;
-          travel_dir = MOVE_LEFT;
-        } else {
-          vx_w = ROBOT_SPEED;
-          vy_w = 0;
-          travel_dir = FORWARD;
+      } else if (wall_B && wall_L) { // 3 Inf izqda
+        if (last_vy < 0) { // Viene de drcha -> robot hacia atras del robot
+          vx_w = ROBOT_SPEED; vy_w = 0; travel_dir = BACKWARD;
+        } else {           // Viene de arriba -> robot hacia izqda del robot
+          vx_w = 0; vy_w = -ROBOT_SPEED; travel_dir = MOVE_LEFT;
         }
       }
 
@@ -515,10 +498,10 @@ private:
 
       bool see_wall = false;
       double check_limit = WALL_SIDE_LIMIT + 0.50; // Margen razonable para re-engancharse a la pared
-      if (hugged_wall == FRONT) see_wall = (ps_val[0] < check_limit || ps_val[7] < check_limit);
-      else if (hugged_wall == BACK) see_wall = (ps_val[3] < check_limit || ps_val[4] < check_limit);
-      else if (hugged_wall == LEFT) see_wall = (ps_val[5] < check_limit); // LATERAL-I
-      else if (hugged_wall == RIGHT) see_wall = (ps_val[2] < check_limit); // LATERAL-D
+      if (hugged_wall == FRONT) see_wall = (ps_val[3] < check_limit || ps_val[4] < check_limit);
+      else if (hugged_wall == BACK) see_wall = (ps_val[0] < check_limit || ps_val[7] < check_limit);
+      else if (hugged_wall == LEFT) see_wall = (ps_val[5] < check_limit || ps_val[1] < check_limit); // LATERAL-I
+      else if (hugged_wall == RIGHT) see_wall = (ps_val[2] < check_limit || ps_val[6] < check_limit); // LATERAL-D
 
       // Seguridad por si nos chocamos de frente con la nueva pared
       bool obstacle = false;
