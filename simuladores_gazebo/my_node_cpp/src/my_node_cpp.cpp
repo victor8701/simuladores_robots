@@ -21,8 +21,10 @@ using namespace std::placeholders;
 #define WALL_SIDE_LIMIT 0.85
 
 // ==================== DISTANCIAS ====================
-#define NEW_WALL_DISTANCE_INF 0.05 // Distancia para esquinas inferiores
-#define NEW_WALL_DISTANCE_SUP 0.20 // Distancia para esquinas superiores
+// Distancia (m) que se avanza tras una esquina exterior
+// antes de volver a buscar la siguiente pared
+#define NEW_WALL_DISTANCE_INF 0.01 // Esquinas inferiores
+#define NEW_WALL_DISTANCE_SUP 0.95  // Esquinas superiores
 #define GOAL_MARGIN 0.50       // Margen de llegada al objetivo (metros)
 
 // ==================== LIMITES DEL MAPA ====================
@@ -95,6 +97,7 @@ public:
     goal_reached = false;
     current_state = LIBRE;
     hugged_wall = NONE;
+    next_hugged_wall = NONE;
     travel_dir = STOP;
     yaw = pos_x = pos_y = 0.0;
     start_x = start_y = goal_x = goal_y = 0.0;
@@ -377,7 +380,7 @@ private:
         break;
       }
 
-      // Esquina exterior: calculamos a qué distancia del sensor (hipotenusa) significa 
+      // Esquina exterior: calculamos a qué distancia del sensor (hipotenusa) significa
       // que ya hemos superado la esquina exactamente por la longitud NEW_WALL_DISTANCE
       double turn_dist_target;
       if (hugged_wall == BACK || ((hugged_wall == LEFT || hugged_wall == RIGHT) && last_vx < 0)) {
@@ -393,40 +396,92 @@ private:
       bool lost_R = (hugged_wall == RIGHT && ps_val[2] >= turn_threshold && ps_val[6] >= turn_threshold); // LATERAL-D
 
       if (lost_F || lost_B || lost_L || lost_R) {
-        // En exterior corners, giramos envolviendo la pared
+        // Guardar punto de inicio del movimiento tras la esquina y
+        // la distancia que queremos recorrer con la velocidad previa
+        // antes de empezar a rodear la esquina.
+        corner_start_x = pos_x;
+        corner_start_y = pos_y;
+        if (lost_B || (lost_L && last_vx < 0) || (lost_R && last_vx < 0)) {
+          // Esquinas superiores del mapa
+          corner_travel_target = NEW_WALL_DISTANCE_SUP;
+        } else {
+          // Esquinas inferiores del mapa
+          corner_travel_target = NEW_WALL_DISTANCE_INF;
+        }
+
+        // Fase 0 de BUSCANDO_PARED: mantener velocidad previa
+        // (recto) durante corner_travel_target metros
+        corner_phase = 0;
+        corner_pre_vx = last_vx;
+        corner_pre_vy = last_vy;
+
+        // Calcular velocidad de la fase 1 (rodear la esquina)
+        double turn_vx = 0.0, turn_vy = 0.0;
+        WallType new_hugged = hugged_wall;
+        DirType new_dir = travel_dir;
+
         if (lost_B) { // Pared TRASERA (-X) ended. We are at Sup Map. Corners 1 or 2
           if (last_vy > 0) { // Iba hacia Drcha del mapa (+Y), passing 2 Sup Drcha Ext
-            vx_w = ROBOT_SPEED; vy_w = 0; // Gira hacia Alante (+X) para bajar a Inf
-            hugged_wall = LEFT; travel_dir = FORWARD;
+            turn_vx = ROBOT_SPEED; turn_vy = 0; // Gira hacia Alante (+X) para bajar a Inf
+            new_hugged = LEFT; new_dir = FORWARD;
           } else {           // Iba hacia Izqda del mapa (-Y), passing 1 Sup Izq Ext
-            vx_w = ROBOT_SPEED; vy_w = 0; // Gira hacia Alante (+X) para bajar a Inf
-            hugged_wall = RIGHT; travel_dir = FORWARD;
+            turn_vx = ROBOT_SPEED; turn_vy = 0; // Gira hacia Alante (+X) para bajar a Inf
+            new_hugged = RIGHT; new_dir = FORWARD;
           }
         } else if (lost_F) { // Pared FRONTAL (+X) ended. We are at Inf Map. Corners 3 or 4
           if (last_vy > 0) { // Iba hacia Drcha del mapa (+Y), passing 4 Inf Drcha Ext
-            vx_w = -ROBOT_SPEED; vy_w = 0; // Gira hacia Atras (-X) para subir a Sup
-            hugged_wall = LEFT; travel_dir = BACKWARD;
+            turn_vx = -ROBOT_SPEED; turn_vy = 0; // Gira hacia Atras (-X) para subir a Sup
+            new_hugged = LEFT; new_dir = BACKWARD;
           } else {           // Iba hacia Izqda del mapa (-Y), passing 3 Inf Izq Ext
-            vx_w = -ROBOT_SPEED; vy_w = 0; // Gira hacia Atras (-X) para subir a Sup
-            hugged_wall = RIGHT; travel_dir = BACKWARD;
+            turn_vx = -ROBOT_SPEED; turn_vy = 0; // Gira hacia Atras (-X) para subir a Sup
+            new_hugged = RIGHT; new_dir = BACKWARD;
           }
         } else if (lost_L) { // Pared LEFT (+Y) ended. Moving along Drcha Map. Corners 2 or 4
           if (last_vx > 0) { // Iba hacia Alante (+X), passing 4 Inf Drcha Ext
-            vx_w = 0; vy_w = -ROBOT_SPEED; // Gira hacia Izqda map (-Y)
-            hugged_wall = FRONT; travel_dir = MOVE_RIGHT;
+            turn_vx = 0; turn_vy = -ROBOT_SPEED; // Gira hacia Izqda map (-Y)
+            new_hugged = FRONT; new_dir = MOVE_RIGHT;
           } else {           // Iba hacia Atras (-X), passing 2 Sup Drcha Ext
-            vx_w = 0; vy_w = -ROBOT_SPEED; // Gira hacia Izqda map (-Y)
-            hugged_wall = BACK; travel_dir = MOVE_RIGHT;
+            turn_vx = 0; turn_vy = -ROBOT_SPEED; // Gira hacia Izqda map (-Y)
+            new_hugged = BACK; new_dir = MOVE_RIGHT;
           }
         } else if (lost_R) { // Pared RIGHT (-Y) ended. Moving along Izqda Map. Corners 1 or 3
           if (last_vx > 0) { // Iba hacia Alante (+X), passing 3 Inf Izq Ext
-            vx_w = 0; vy_w = ROBOT_SPEED; // Gira hacia Drcha map (+Y)
-            hugged_wall = FRONT; travel_dir = MOVE_LEFT;
+            turn_vx = 0; turn_vy = ROBOT_SPEED; // Gira hacia Drcha map (+Y)
+            new_hugged = FRONT; new_dir = MOVE_LEFT;
           } else {           // Iba hacia Atras (-X), passing 1 Sup Izq Ext
-            vx_w = 0; vy_w = ROBOT_SPEED; // Gira hacia Drcha map (+Y)
-            hugged_wall = BACK; travel_dir = MOVE_LEFT;
+            turn_vx = 0; turn_vy = ROBOT_SPEED; // Gira hacia Drcha map (+Y)
+            new_hugged = BACK; new_dir = MOVE_LEFT;
           }
         }
+
+        // Guardar fase 1 (cómo rodear la esquina) y
+        // la nueva pared que se pretende seguir después.
+        corner_turn_vx = turn_vx;
+        corner_turn_vy = turn_vy;
+        corner_turn_dir = new_dir;
+        next_hugged_wall = new_hugged;
+
+        // Primera fase en BUSCANDO_PARED: misma velocidad que antes
+        vx_w = corner_pre_vx;
+        vy_w = corner_pre_vy;
+
+        // Actualizar travel_dir coherente con la velocidad previa
+        if (std::abs(vx_w) >= std::abs(vy_w)) {
+          if (vx_w > 0)
+            travel_dir = BACKWARD; // ver notas en sensores_vs_esquinas.txt
+          else if (vx_w < 0)
+            travel_dir = FORWARD;
+          else
+            travel_dir = STOP;
+        } else {
+          if (vy_w > 0)
+            travel_dir = MOVE_RIGHT;
+          else if (vy_w < 0)
+            travel_dir = MOVE_LEFT;
+          else
+            travel_dir = STOP;
+        }
+
         current_state = FINDING_WALL;
         break;
       }
@@ -493,15 +548,39 @@ private:
 
     // ── BUSCANDO PARED LUEGO DE DAR LA VUELTA A LA ESQUINA ─────────
     case FINDING_WALL: {
-      vx_w = last_vx;
-      vy_w = last_vy;
+      // Fase 0: avanzar recto con la velocidad previa hasta recorrer
+      // NEW_WALL_DISTANCE_xxx metros desde la esquina exterior.
+      if (corner_phase == 0) {
+        vx_w = corner_pre_vx;
+        vy_w = corner_pre_vy;
+
+        double dist_from_corner =
+            std::sqrt(std::pow(pos_x - corner_start_x, 2) +
+                      std::pow(pos_y - corner_start_y, 2));
+        if (dist_from_corner >= corner_travel_target) {
+          corner_phase = 1;
+        }
+      } else {
+        // Fase 1: rodear la esquina con la velocidad calculada
+        vx_w = corner_turn_vx;
+        vy_w = corner_turn_vy;
+        travel_dir = corner_turn_dir;
+      }
 
       bool see_wall = false;
       double check_limit = WALL_SIDE_LIMIT + 0.50; // Margen razonable para re-engancharse a la pared
-      if (hugged_wall == FRONT) see_wall = (ps_val[3] < check_limit || ps_val[4] < check_limit);
-      else if (hugged_wall == BACK) see_wall = (ps_val[0] < check_limit || ps_val[7] < check_limit);
-      else if (hugged_wall == LEFT) see_wall = (ps_val[5] < check_limit || ps_val[1] < check_limit); // LATERAL-I
-      else if (hugged_wall == RIGHT) see_wall = (ps_val[2] < check_limit || ps_val[6] < check_limit); // LATERAL-D
+      // La pared que queremos encontrar después de la esquina es next_hugged_wall,
+      // no la que estábamos siguiendo antes (hugged_wall).
+      if (next_hugged_wall == FRONT)
+        see_wall = (ps_val[3] < check_limit || ps_val[4] < check_limit);
+      else if (next_hugged_wall == BACK)
+        see_wall = (ps_val[0] < check_limit || ps_val[7] < check_limit);
+      else if (next_hugged_wall == LEFT)
+        // Para reacoplar pared solo usamos el lateral puro, no el diagonal,
+        // para evitar confundir paredes superiores con laterales.
+        see_wall = (ps_val[5] < check_limit); // LATERAL-I (ps5)
+      else if (next_hugged_wall == RIGHT)
+        see_wall = (ps_val[2] < check_limit); // LATERAL-D (ps2)
 
       // Seguridad por si nos chocamos de frente con la nueva pared
       bool obstacle = false;
@@ -512,6 +591,11 @@ private:
 
       // Una vez avista la nueva pared que quiere seguir (o se choca), retoma SIGUIENDO_PARED
       if (see_wall || obstacle) {
+        // En este punto ya hemos encontrado realmente la nueva pared,
+        // así que ahora sí actualizamos hugged_wall.
+        if (next_hugged_wall != NONE) {
+          hugged_wall = next_hugged_wall;
+        }
         current_state = SIGUIENDO_PARED;
       }
       break;
@@ -558,12 +642,19 @@ private:
 
   State current_state;
   WallType hugged_wall;
+  WallType next_hugged_wall;
   WallType prev_hugged_wall;
   DirType travel_dir;
 
   double last_vx = 0.0, last_vy = 0.0;
   int tick_count = 0; // Contador de ticks para throttle del dashboard
   double last_wall_dist = 0.75;
+  double corner_start_x = 0.0, corner_start_y = 0.0;
+  double corner_travel_target = 0.0;
+  double corner_pre_vx = 0.0, corner_pre_vy = 0.0;
+  double corner_turn_vx = 0.0, corner_turn_vy = 0.0;
+  DirType corner_turn_dir = STOP;
+  int corner_phase = 0;
 };
 
 // ---------------------------------------------------------------------------
