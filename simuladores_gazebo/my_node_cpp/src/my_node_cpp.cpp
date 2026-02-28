@@ -24,8 +24,8 @@ using namespace std::placeholders;
 // Distancia (m) que se avanza tras una esquina exterior
 // antes de volver a buscar la siguiente pared
 #define NEW_WALL_DISTANCE_INF 0.01 // Esquinas inferiores
-#define NEW_WALL_DISTANCE_SUP 0.95  // Esquinas superiores
-#define GOAL_MARGIN 0.50       // Margen de llegada al objetivo (metros)
+#define NEW_WALL_DISTANCE_SUP 0.95 // Esquinas superiores
+#define GOAL_MARGIN 0.50           // Margen de llegada al objetivo (metros)
 
 // ==================== LIMITES DEL MAPA ====================
 #define MAX_X 16.5
@@ -303,8 +303,6 @@ private:
       stop();
       draw_dashboard();
       printColored("★ OBJETIVO ALCANZADO ★", COLOR_GREEN);
-      std::cout << "  Posicion final: X=" << std::fixed << std::setprecision(2)
-                << pos_x << "  Y=" << pos_y << std::endl;
       RCLCPP_INFO(this->get_logger(), "META ALCANZADA en X=%.2f Y=%.2f", pos_x,
                   pos_y);
       return;
@@ -312,8 +310,12 @@ private:
 
     bool wall_F = (ps_val[3] < WALL_FRONT_LIMIT || ps_val[4] < WALL_FRONT_LIMIT);
     bool wall_B = (ps_val[0] < WALL_FRONT_LIMIT || ps_val[7] < WALL_FRONT_LIMIT);
-    bool wall_L = (ps_val[5] < WALL_SIDE_LIMIT || ps_val[1] < WALL_SIDE_LIMIT);
-    bool wall_R = (ps_val[2] < WALL_SIDE_LIMIT || ps_val[6] < WALL_SIDE_LIMIT);
+    // Para decidir si hay pared lateral (y para entrar en esquina interior),
+    // usamos únicamente los sensores laterales puros (ps5 izquierda, ps2 derecha).
+    // Los diagonales (ps1, ps6) pueden ver esquinas/techos y no deben
+    // provocar un cambio de estado a ESQUINA_INTERIOR.
+    bool wall_L = (ps_val[5] < WALL_SIDE_LIMIT);
+    bool wall_R = (ps_val[2] < WALL_SIDE_LIMIT);
     auto twist = geometry_msgs::msg::Twist();
     twist.angular.z = -YAW_KP * yaw;
 
@@ -436,21 +438,21 @@ private:
             turn_vx = -ROBOT_SPEED; turn_vy = 0; // Gira hacia Atras (-X) para subir a Sup
             new_hugged = RIGHT; new_dir = BACKWARD;
           }
-        } else if (lost_L) { // Pared LEFT (+Y) ended. Moving along Drcha Map. Corners 2 or 4
+        } else if (lost_L) { // Pared LEFT ended.
           if (last_vx > 0) { // Iba hacia Alante (+X), passing 4 Inf Drcha Ext
-            turn_vx = 0; turn_vy = -ROBOT_SPEED; // Gira hacia Izqda map (-Y)
-            new_hugged = FRONT; new_dir = MOVE_RIGHT;
-          } else {           // Iba hacia Atras (-X), passing 2 Sup Drcha Ext
-            turn_vx = 0; turn_vy = -ROBOT_SPEED; // Gira hacia Izqda map (-Y)
-            new_hugged = BACK; new_dir = MOVE_RIGHT;
+            turn_vx = 0; turn_vy = +ROBOT_SPEED; // Gira hacia Izqda map (-Y)
+            new_hugged = RIGHT; new_dir = MOVE_RIGHT; // Swapped from FRONT to RIGHT, and MOVE_RIGHT was already there.
+          } else {           // Iba hacia Atras (-X), passing 1 Sup Izq Ext
+            turn_vx = 0; turn_vy = -ROBOT_SPEED; // Gira hacia Drcha map (+Y)
+            new_hugged = LEFT; new_dir = MOVE_LEFT; // Swapped from BACK to LEFT, and MOVE_LEFT was already there.
           }
         } else if (lost_R) { // Pared RIGHT (-Y) ended. Moving along Izqda Map. Corners 1 or 3
           if (last_vx > 0) { // Iba hacia Alante (+X), passing 3 Inf Izq Ext
-            turn_vx = 0; turn_vy = ROBOT_SPEED; // Gira hacia Drcha map (+Y)
-            new_hugged = FRONT; new_dir = MOVE_LEFT;
+            turn_vx = 0; turn_vy = -ROBOT_SPEED; // Gira hacia Drcha map (+Y)
+            new_hugged = LEFT; new_dir = MOVE_LEFT; // Swapped from FRONT to LEFT, and MOVE_LEFT was already there.
           } else {           // Iba hacia Atras (-X), passing 1 Sup Izq Ext
-            turn_vx = 0; turn_vy = ROBOT_SPEED; // Gira hacia Drcha map (+Y)
-            new_hugged = BACK; new_dir = MOVE_LEFT;
+            turn_vx = 0; turn_vy = -ROBOT_SPEED; // Gira hacia Drcha map (+Y)
+            new_hugged = FRONT; new_dir = MOVE_LEFT; // Swapped from BACK to FRONT, and MOVE_LEFT was already there.
           }
         }
 
