@@ -12,28 +12,21 @@
 
 using namespace std::placeholders;
 
-// ==================== VELOCIDADES ====================
 #define ROBOT_SPEED 1.2
 #define YAW_KP 2.5
 
-// ==================== UMBRALES DE SENSORES ====================
 #define WALL_FRONT_LIMIT 0.85
 #define WALL_SIDE_LIMIT 0.85
 
-// ==================== DISTANCIAS ====================
-// Distancia (m) que se avanza tras una esquina exterior
-// antes de volver a buscar la siguiente pared
-#define NEW_WALL_DISTANCE_INF 0.01 // Esquinas inferiores
-#define NEW_WALL_DISTANCE_SUP 0.95 // Esquinas superiores
-#define GOAL_MARGIN 0.50           // Margen de llegada al objetivo (metros)
+#define NEW_WALL_DISTANCE_INF 0.01
+#define NEW_WALL_DISTANCE_SUP 0.95
+#define GOAL_MARGIN 0.50
 
-// ==================== LIMITES DEL MAPA ====================
 #define MAX_X 16.5
 #define MAX_Y 16.5
 #define MIN_X 2.5
 #define MIN_Y 2.5
 
-// ==================== DISPLAY ====================
 #define COLOR_RESET "\033[0m"
 #define COLOR_GREEN "\033[1;32m"
 #define COLOR_YELLOW "\033[1;33m"
@@ -47,18 +40,13 @@ enum State { LIBRE, SIGUIENDO_PARED, INT_CORNER, FINDING_WALL, META_ALCANZADA };
 enum WallType { NONE, FRONT, BACK, LEFT, RIGHT };
 enum DirType { STOP, FORWARD, BACKWARD, MOVE_LEFT, MOVE_RIGHT };
 
-// ---------------------------------------------------------------------------
-// Helpers de display (réplica de test_sensores.cpp /
-// e-puck_avoid_obstacles_VMP.cpp)
-// ---------------------------------------------------------------------------
+// Helpers de display
 void printColored(const std::string &message,
                   const std::string &color = COLOR_RESET) {
   std::cout << color << message << COLOR_RESET << std::endl;
 }
 
 void clearScreen() { std::cout << "\033[2J\033[1;1H"; }
-
-// ---------------------------------------------------------------------------
 
 class ManhattanController : public rclcpp::Node {
 public:
@@ -105,9 +93,6 @@ public:
   }
 
 private:
-  // -----------------------------------------------------------------------
-  // Odometría
-  // -----------------------------------------------------------------------
   void update_state(double x, double y, double qz, double qw) {
     pos_x = x;
     pos_y = y;
@@ -117,7 +102,7 @@ private:
       start_x = pos_x;
       start_y = pos_y;
 
-      // Esquina diagonalmente opuesta según quadrante de inicio
+      // Objetivo en esquina diagonalmente opuesta
       if (pos_x < 6.0 && pos_y < 6.0) {
         goal_x = MAX_X;
         goal_y = MAX_Y;
@@ -136,9 +121,6 @@ private:
     }
   }
 
-  // -----------------------------------------------------------------------
-  // Helpers de display
-  // -----------------------------------------------------------------------
   std::string color_for_dist(double dist) const {
     if (dist < 0.8)
       return COLOR_RED;
@@ -157,7 +139,6 @@ private:
     for (int i = 0; i < LEN; ++i)
       bar += (i < filled) ? "█" : "░";
     bar += "]";
-    // inf = verde (no hay obstáculo)
     std::string color = is_inf ? COLOR_GREEN : color_for_dist(dist);
     return color + bar + COLOR_RESET;
   }
@@ -201,16 +182,12 @@ private:
     return "PARADO";
   }
 
-  // -----------------------------------------------------------------------
-  // Dashboard — estilo test_sensores.cpp
-  // -----------------------------------------------------------------------
   void draw_dashboard() {
     double dist_to_goal =
         std::sqrt(std::pow(goal_x - pos_x, 2) + std::pow(goal_y - pos_y, 2));
 
     clearScreen();
 
-    // ── Cabecera ──
     printColored("╔════════════════════════════════════════════════════════════════════╗", COLOR_CYAN);
     printColored("║             MANHATTAN CONTROLLER  —  ROS2 / Gazebo                 ║", COLOR_CYAN);
     printColored("╚════════════════════════════════════════════════════════════════════╝", COLOR_CYAN);
@@ -284,9 +261,6 @@ private:
     std::cout << "  Presiona Ctrl+C para detener" << std::endl;
   }
 
-  // -----------------------------------------------------------------------
-  // Bucle de control (100 ms) — dashboard se actualiza cada 5 ticks (~500ms)
-  // -----------------------------------------------------------------------
   void control_loop() {
     if (!initialized || goal_reached)
       return;
@@ -295,8 +269,7 @@ private:
     double errX = goal_x - pos_x;
     double errY = goal_y - pos_y;
 
-    // ── Condición de llegada ──
-    // if (std::sqrt(errX*errX + errY*errY) < GOAL_RADIUS) {
+    // Condición de llegada
     if (std::abs(errX) < GOAL_MARGIN && std::abs(errY) < GOAL_MARGIN) {
       goal_reached = true;
       current_state = META_ALCANZADA;
@@ -310,10 +283,6 @@ private:
 
     bool wall_F = (ps_val[3] < WALL_FRONT_LIMIT || ps_val[4] < WALL_FRONT_LIMIT);
     bool wall_B = (ps_val[0] < WALL_FRONT_LIMIT || ps_val[7] < WALL_FRONT_LIMIT);
-    // Para decidir si hay pared lateral (y para entrar en esquina interior),
-    // usamos únicamente los sensores laterales puros (ps5 izquierda, ps2 derecha).
-    // Los diagonales (ps1, ps6) pueden ver esquinas/techos y no deben
-    // provocar un cambio de estado a ESQUINA_INTERIOR.
     bool wall_L = (ps_val[5] < WALL_SIDE_LIMIT);
     bool wall_R = (ps_val[2] < WALL_SIDE_LIMIT);
     auto twist = geometry_msgs::msg::Twist();
@@ -322,17 +291,16 @@ private:
     double vx_w = 0, vy_w = 0;
 
     switch (current_state) {
-    // ── LIBRE ──────────────────────────────────────────────────────
     case LIBRE: {
       bool xDone = (std::abs(errX) <= 0.3);
       bool yDone = (std::abs(errY) <= 0.3);
       if (!xDone && !yDone) {
         if (std::abs(errX) < std::abs(errY)) {
           vx_w = (errX > 0) ? ROBOT_SPEED : -ROBOT_SPEED; 
-          travel_dir = (errX > 0) ? FORWARD : BACKWARD; // +X=Alante(Inf), -X=Atras(Sup)
+          travel_dir = (errX > 0) ? FORWARD : BACKWARD;
         } else {
           vy_w = (errY > 0) ? ROBOT_SPEED : -ROBOT_SPEED; 
-          travel_dir = (errY > 0) ? MOVE_LEFT : MOVE_RIGHT; // +Y=Izquierda(Drcha Mapa), -Y=Derecha(Izq Mapa)
+          travel_dir = (errY > 0) ? MOVE_LEFT : MOVE_RIGHT;
         }
       } else if (!xDone) {
         vx_w = (errX > 0) ? ROBOT_SPEED : -ROBOT_SPEED;
@@ -341,13 +309,10 @@ private:
         vy_w = (errY > 0) ? ROBOT_SPEED : -ROBOT_SPEED;
         travel_dir = (errY > 0) ? MOVE_LEFT : MOVE_RIGHT;
       }
-      // Si ambos done -> GOAL_MARGIN lo capturará en el siguiente tick
 
       if (wall_F) {
         current_state = SIGUIENDO_PARED;
         hugged_wall = FRONT;
-        // Keep the parallel velocity that brought us here if moving perpendicular to the wall.
-        // Or if moving towards the wall, pick the direction with the largest error.
         if (std::abs(vy_w) > 0) travel_dir = (vy_w > 0) ? MOVE_LEFT : MOVE_RIGHT;
         else travel_dir = (errY > 0) ? MOVE_LEFT : MOVE_RIGHT; 
       } else if (wall_B) {
@@ -369,9 +334,8 @@ private:
       break;
     }
 
-    // ── SIGUIENDO_PARED ────────────────────────────────────────────
     case SIGUIENDO_PARED: {
-      // Conservamos la distancia a la pared para calcular la hipotenusa de la esquina
+      // Conservar distancia a pared para calcular esquina
       if (hugged_wall == FRONT) {
         double d = std::min(ps_val[3], ps_val[4]);
         if (d < 1.0) last_wall_dist = d;
@@ -379,9 +343,9 @@ private:
         double d = std::min(ps_val[0], ps_val[7]);
         if (d < 1.0) last_wall_dist = d;
       } else if (hugged_wall == LEFT) {
-        if (ps_val[5] < 1.0) last_wall_dist = ps_val[5]; // LATERAL-I
+        if (ps_val[5] < 1.0) last_wall_dist = ps_val[5];
       } else if (hugged_wall == RIGHT) {
-        if (ps_val[2] < 1.0) last_wall_dist = ps_val[2]; // LATERAL-D
+        if (ps_val[2] < 1.0) last_wall_dist = ps_val[2];
       }
 
       // Esquina interior
@@ -392,8 +356,7 @@ private:
         break;
       }
 
-      // Esquina exterior: calculamos a qué distancia del sensor (hipotenusa) significa
-      // que ya hemos superado la esquina exactamente por la longitud NEW_WALL_DISTANCE
+      // Esquina exterior
       double turn_dist_target;
       if (hugged_wall == BACK || ((hugged_wall == LEFT || hugged_wall == RIGHT) && last_vx < 0)) {
         turn_dist_target = NEW_WALL_DISTANCE_SUP;
@@ -404,83 +367,72 @@ private:
       
       bool lost_F = (hugged_wall == FRONT && ps_val[3] >= turn_threshold && ps_val[4] >= turn_threshold);
       bool lost_B = (hugged_wall == BACK  && ps_val[0] >= turn_threshold && ps_val[7] >= turn_threshold);
-      bool lost_L = (hugged_wall == LEFT  && ps_val[5] >= turn_threshold && ps_val[1] >= turn_threshold); // LATERAL-I
-      bool lost_R = (hugged_wall == RIGHT && ps_val[2] >= turn_threshold && ps_val[6] >= turn_threshold); // LATERAL-D
+      bool lost_L = (hugged_wall == LEFT  && ps_val[5] >= turn_threshold && ps_val[1] >= turn_threshold);
+      bool lost_R = (hugged_wall == RIGHT && ps_val[2] >= turn_threshold && ps_val[6] >= turn_threshold);
 
       if (lost_F || lost_B || lost_L || lost_R) {
-        // Guardar punto de inicio del movimiento tras la esquina y
-        // la distancia que queremos recorrer con la velocidad previa
-        // antes de empezar a rodear la esquina.
         corner_start_x = pos_x;
         corner_start_y = pos_y;
         if (lost_B || (lost_L && last_vx < 0) || (lost_R && last_vx < 0)) {
-          // Esquinas superiores del mapa
           corner_travel_target = NEW_WALL_DISTANCE_SUP;
         } else {
           // Esquinas inferiores del mapa
           corner_travel_target = NEW_WALL_DISTANCE_INF;
         }
 
-        // Fase 0 de BUSCANDO_PARED: mantener velocidad previa
-        // (recto) durante corner_travel_target metros
         corner_phase = 0;
         corner_pre_vx = last_vx;
         corner_pre_vy = last_vy;
 
-        // Calcular velocidad de la fase 1 (rodear la esquina)
         double turn_vx = 0.0, turn_vy = 0.0;
         WallType new_hugged = hugged_wall;
         DirType new_dir = travel_dir;
 
-        if (lost_B) { // Pared TRASERA (-X) ended. We are at Sup Map. Corners 1 or 2
-          if (last_vy > 0) { // Iba hacia Drcha del mapa (+Y), passing 2 Sup Drcha Ext
-            turn_vx = ROBOT_SPEED; turn_vy = 0; // Gira hacia Alante (+X) para bajar a Inf
+        if (lost_B) {
+          if (last_vy > 0) {
+            turn_vx = ROBOT_SPEED; turn_vy = 0;
             new_hugged = LEFT; new_dir = FORWARD;
-          } else {           // Iba hacia Izqda del mapa (-Y), passing 1 Sup Izq Ext
-            turn_vx = ROBOT_SPEED; turn_vy = 0; // Gira hacia Alante (+X) para bajar a Inf
+          } else {
+            turn_vx = ROBOT_SPEED; turn_vy = 0;
             new_hugged = RIGHT; new_dir = FORWARD;
           }
-        } else if (lost_F) { // Pared FRONTAL (+X) ended. We are at Inf Map. Corners 3 or 4
-          if (last_vy > 0) { // Iba hacia Drcha del mapa (+Y), passing 4 Inf Drcha Ext
-            turn_vx = -ROBOT_SPEED; turn_vy = 0; // Gira hacia Atras (-X) para subir a Sup
+        } else if (lost_F) {
+          if (last_vy > 0) {
+            turn_vx = -ROBOT_SPEED; turn_vy = 0;
             new_hugged = LEFT; new_dir = BACKWARD;
-          } else {           // Iba hacia Izqda del mapa (-Y), passing 3 Inf Izq Ext
-            turn_vx = -ROBOT_SPEED; turn_vy = 0; // Gira hacia Atras (-X) para subir a Sup
+          } else {
+            turn_vx = -ROBOT_SPEED; turn_vy = 0;
             new_hugged = RIGHT; new_dir = BACKWARD;
           }
-        } else if (lost_L) { // Pared LEFT ended.
-          if (last_vx > 0) { // Iba hacia Alante (+X), passing 4 Inf Drcha Ext
-            turn_vx = 0; turn_vy = +ROBOT_SPEED; // Gira hacia Izqda map (-Y)
-            new_hugged = RIGHT; new_dir = MOVE_RIGHT; // Swapped from FRONT to RIGHT, and MOVE_RIGHT was already there.
-          } else {           // Iba hacia Atras (-X), passing 1 Sup Izq Ext
-            turn_vx = 0; turn_vy = -ROBOT_SPEED; // Gira hacia Drcha map (+Y)
-            new_hugged = LEFT; new_dir = MOVE_LEFT; // Swapped from BACK to LEFT, and MOVE_LEFT was already there.
+        } else if (lost_L) {
+          if (last_vx > 0) {
+            turn_vx = 0; turn_vy = +ROBOT_SPEED;
+            new_hugged = RIGHT; new_dir = MOVE_RIGHT;
+          } else {
+            turn_vx = 0; turn_vy = -ROBOT_SPEED;
+            new_hugged = LEFT; new_dir = MOVE_LEFT;
           }
-        } else if (lost_R) { // Pared RIGHT (-Y) ended. Moving along Izqda Map. Corners 1 or 3
-          if (last_vx > 0) { // Iba hacia Alante (+X), passing 3 Inf Izq Ext
-            turn_vx = 0; turn_vy = -ROBOT_SPEED; // Gira hacia Drcha map (+Y)
-            new_hugged = LEFT; new_dir = MOVE_LEFT; // Swapped from FRONT to LEFT, and MOVE_LEFT was already there.
-          } else {           // Iba hacia Atras (-X), passing 1 Sup Izq Ext
-            turn_vx = 0; turn_vy = -ROBOT_SPEED; // Gira hacia Drcha map (+Y)
-            new_hugged = FRONT; new_dir = MOVE_LEFT; // Swapped from BACK to FRONT, and MOVE_LEFT was already there.
+        } else if (lost_R) {
+          if (last_vx > 0) {
+            turn_vx = 0; turn_vy = -ROBOT_SPEED;
+            new_hugged = LEFT; new_dir = MOVE_LEFT;
+          } else {
+            turn_vx = 0; turn_vy = -ROBOT_SPEED;
+            new_hugged = FRONT; new_dir = MOVE_LEFT;
           }
         }
 
-        // Guardar fase 1 (cómo rodear la esquina) y
-        // la nueva pared que se pretende seguir después.
         corner_turn_vx = turn_vx;
         corner_turn_vy = turn_vy;
         corner_turn_dir = new_dir;
         next_hugged_wall = new_hugged;
 
-        // Primera fase en BUSCANDO_PARED: misma velocidad que antes
         vx_w = corner_pre_vx;
         vy_w = corner_pre_vy;
 
-        // Actualizar travel_dir coherente con la velocidad previa
         if (std::abs(vx_w) >= std::abs(vy_w)) {
           if (vx_w > 0)
-            travel_dir = BACKWARD; // ver notas en sensores_vs_esquinas.txt
+            travel_dir = BACKWARD;
           else if (vx_w < 0)
             travel_dir = FORWARD;
           else
@@ -498,8 +450,7 @@ private:
         break;
       }
 
-      // Seguimiento normal: bloquear eje de la pared, moverse continuamente
-      // en el sentido paralelo que traíamos (travel_dir)
+      // Seguimiento normal
       if (hugged_wall == FRONT || hugged_wall == BACK) {
         vx_w = 0.0;
         if (travel_dir == MOVE_LEFT) {
@@ -507,7 +458,6 @@ private:
         } else if (travel_dir == MOVE_RIGHT) {
           vy_w = -ROBOT_SPEED;
         } else {
-          // Si por alguna razón no tenemos dirección perpendicular, escogemos una basándonos en el objetivo
           vy_w = (errY > 0) ? ROBOT_SPEED : -ROBOT_SPEED;
           travel_dir = (vy_w > 0) ? MOVE_LEFT : MOVE_RIGHT;
         }
@@ -518,7 +468,6 @@ private:
         } else if (travel_dir == BACKWARD) {
           vx_w = -ROBOT_SPEED;
         } else {
-          // Si no tenemos dirección, escogemos basándonos en el objetivo
           vx_w = (errX > 0) ? ROBOT_SPEED : -ROBOT_SPEED;
           travel_dir = (vx_w > 0) ? FORWARD : BACKWARD;
         }
@@ -528,7 +477,6 @@ private:
 
     // ── ESQUINA INTERIOR ───────────────────────────────────────────
     case INT_CORNER:
-    //{ VMP  
     if (wall_F && wall_L) { // 1 Sup izqda
          if (prev_hugged_wall == FRONT) {
              vx_w = ROBOT_SPEED; vy_w = 0; travel_dir = FORWARD;
@@ -562,7 +510,6 @@ private:
              hugged_wall = BACK;
          }
       }
-      //} VMP
 
       // Salida del corner cuando dejamos de ver alguna de las paredes interiores
       if (!((wall_F && wall_L) || (wall_F && wall_R) || (wall_B && wall_L) || (wall_B && wall_R))) {
@@ -570,10 +517,8 @@ private:
       }
       break;
 
-    // ── BUSCANDO PARED LUEGO DE DAR LA VUELTA A LA ESQUINA ─────────
     case FINDING_WALL: {
-      // Fase 0: avanzar recto con la velocidad previa hasta recorrer
-      // NEW_WALL_DISTANCE_xxx metros desde la esquina exterior.
+      // Fase 0: avanzar recto, Fase 1: rodear la esquina
       if (corner_phase == 0) {
         vx_w = corner_pre_vx;
         vy_w = corner_pre_vy;
@@ -592,31 +537,23 @@ private:
       }
 
       bool see_wall = false;
-      double check_limit = WALL_SIDE_LIMIT + 0.50; // Margen razonable para re-engancharse a la pared
-      // La pared que queremos encontrar después de la esquina es next_hugged_wall,
-      // no la que estábamos siguiendo antes (hugged_wall).
+      double check_limit = WALL_SIDE_LIMIT + 0.50;
       if (next_hugged_wall == FRONT)
         see_wall = (ps_val[3] < check_limit || ps_val[4] < check_limit);
       else if (next_hugged_wall == BACK)
         see_wall = (ps_val[0] < check_limit || ps_val[7] < check_limit);
       else if (next_hugged_wall == LEFT)
-        // Para reacoplar pared solo usamos el lateral puro, no el diagonal,
-        // para evitar confundir paredes superiores con laterales.
-        see_wall = (ps_val[5] < check_limit); // LATERAL-I (ps5)
+        see_wall = (ps_val[5] < check_limit);
       else if (next_hugged_wall == RIGHT)
-        see_wall = (ps_val[2] < check_limit); // LATERAL-D (ps2)
+        see_wall = (ps_val[2] < check_limit);
 
-      // Seguridad por si nos chocamos de frente con la nueva pared
       bool obstacle = false;
       if (travel_dir == FORWARD && wall_F) obstacle = true;
       if (travel_dir == BACKWARD && wall_B) obstacle = true;
       if (travel_dir == MOVE_LEFT && wall_L) obstacle = true;
       if (travel_dir == MOVE_RIGHT && wall_R) obstacle = true;
 
-      // Una vez avista la nueva pared que quiere seguir (o se choca), retoma SIGUIENDO_PARED
       if (see_wall || obstacle) {
-        // En este punto ya hemos encontrado realmente la nueva pared,
-        // así que ahora sí actualizamos hugged_wall.
         if (next_hugged_wall != NONE) {
           hugged_wall = next_hugged_wall;
         }
@@ -632,27 +569,16 @@ private:
     last_vx = vx_w;
     last_vy = vy_w;
 
-    // Transformar velocidades mundo → robot (rotación por yaw)
+    // Transformar velocidades mundo -> robot
     twist.linear.x = vx_w * std::cos(yaw) + vy_w * std::sin(yaw);
     twist.linear.y = -vx_w * std::sin(yaw) + vy_w * std::cos(yaw);
     pub_vel->publish(twist);
 
-    // Actualizar display cada 5 ticks (~500ms), como test_sensores.cpp con
-    // frameCount%10
     if (tick_count % 5 == 0)
       draw_dashboard();
   }
 
-  // -----------------------------------------------------------------------
-  // Auxiliares
-  // -----------------------------------------------------------------------
-
-
   void stop() { pub_vel->publish(geometry_msgs::msg::Twist()); }
-
-  // -----------------------------------------------------------------------
-  // Miembros
-  // -----------------------------------------------------------------------
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_vel;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_state;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_odom;
@@ -681,7 +607,6 @@ private:
   int corner_phase = 0;
 };
 
-// ---------------------------------------------------------------------------
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<ManhattanController>());
