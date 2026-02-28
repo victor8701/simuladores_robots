@@ -41,7 +41,7 @@ def generate_launch_description():
         arguments=[
             '-name', 'my_diffdrive_robot',
             '-file', sdf_file_path,
-            '-x', '12', '-y', '2.7', '-z', '0.2'
+            '-x', '12.5', '-y', '10.8', '-z', '0.2'
         ],
         output='screen'
     )

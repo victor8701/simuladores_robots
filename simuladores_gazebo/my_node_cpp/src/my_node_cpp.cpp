@@ -346,15 +346,25 @@ private:
       if (wall_F) {
         current_state = SIGUIENDO_PARED;
         hugged_wall = FRONT;
+        // Keep the parallel velocity that brought us here if moving perpendicular to the wall.
+        // Or if moving towards the wall, pick the direction with the largest error.
+        if (std::abs(vy_w) > 0) travel_dir = (vy_w > 0) ? MOVE_LEFT : MOVE_RIGHT;
+        else travel_dir = (errY > 0) ? MOVE_LEFT : MOVE_RIGHT; 
       } else if (wall_B) {
         current_state = SIGUIENDO_PARED;
         hugged_wall = BACK;
+        if (std::abs(vy_w) > 0) travel_dir = (vy_w > 0) ? MOVE_LEFT : MOVE_RIGHT;
+        else travel_dir = (errY > 0) ? MOVE_LEFT : MOVE_RIGHT; 
       } else if (wall_L) {
         current_state = SIGUIENDO_PARED;
         hugged_wall = LEFT;
+        if (std::abs(vx_w) > 0) travel_dir = (vx_w > 0) ? FORWARD : BACKWARD;
+        else travel_dir = (errX > 0) ? FORWARD : BACKWARD; 
       } else if (wall_R) {
         current_state = SIGUIENDO_PARED;
         hugged_wall = RIGHT;
+        if (std::abs(vx_w) > 0) travel_dir = (vx_w > 0) ? FORWARD : BACKWARD;
+        else travel_dir = (errX > 0) ? FORWARD : BACKWARD; 
       }
       break;
     }
@@ -488,19 +498,29 @@ private:
         break;
       }
 
-      // Seguimiento normal: bloquear eje de la pared, moverse en el
-      // perpendicular
+      // Seguimiento normal: bloquear eje de la pared, moverse continuamente
+      // en el sentido paralelo que traíamos (travel_dir)
       if (hugged_wall == FRONT || hugged_wall == BACK) {
-        if (std::abs(errY) > 0.3) {
+        vx_w = 0.0;
+        if (travel_dir == MOVE_LEFT) {
+          vy_w = ROBOT_SPEED;
+        } else if (travel_dir == MOVE_RIGHT) {
+          vy_w = -ROBOT_SPEED;
+        } else {
+          // Si por alguna razón no tenemos dirección perpendicular, escogemos una basándonos en el objetivo
           vy_w = (errY > 0) ? ROBOT_SPEED : -ROBOT_SPEED;
-          vx_w = 0.0;
-          travel_dir = (errY > 0) ? MOVE_LEFT : MOVE_RIGHT; 
+          travel_dir = (vy_w > 0) ? MOVE_LEFT : MOVE_RIGHT;
         }
-      } else {
-        if (std::abs(errX) > 0.3) {
+      } else if (hugged_wall == LEFT || hugged_wall == RIGHT) {
+        vy_w = 0.0;
+        if (travel_dir == FORWARD) {
+          vx_w = ROBOT_SPEED;
+        } else if (travel_dir == BACKWARD) {
+          vx_w = -ROBOT_SPEED;
+        } else {
+          // Si no tenemos dirección, escogemos basándonos en el objetivo
           vx_w = (errX > 0) ? ROBOT_SPEED : -ROBOT_SPEED;
-          vy_w = 0.0;
-          travel_dir = (errX > 0) ? FORWARD : BACKWARD; 
+          travel_dir = (vx_w > 0) ? FORWARD : BACKWARD;
         }
       }
       break;
@@ -508,43 +528,45 @@ private:
 
     // ── ESQUINA INTERIOR ───────────────────────────────────────────
     case INT_CORNER:
-      if (wall_F && wall_L) { // 1 Sup izqda
-        if (last_vy < 0) { // Viene de drcha (vy<0 va a izqda) -> robot hacia alante del robot
-          vx_w = -ROBOT_SPEED; vy_w = 0; travel_dir = FORWARD;
-        } else {           // Viene de abajo (vx<0 va a alante) -> robot hacia izqda del robot
-          vx_w = 0; vy_w = -ROBOT_SPEED; travel_dir = MOVE_LEFT;
-        }
+    //{ VMP  
+    if (wall_F && wall_L) { // 1 Sup izqda
+         if (prev_hugged_wall == FRONT) {
+             vx_w = ROBOT_SPEED; vy_w = 0; travel_dir = FORWARD;
+             hugged_wall = LEFT;
+         } else {
+             vx_w = 0; vy_w = ROBOT_SPEED; travel_dir = MOVE_LEFT;
+             hugged_wall = FRONT;
+         }
       } else if (wall_B && wall_R) { // 4 Inf drcha
-        if (last_vy > 0) { // Viene de izqda (vy>0 va a drcha) -> robot hacia atras del robot
-          vx_w = ROBOT_SPEED; vy_w = 0; travel_dir = BACKWARD;
-        } else {           // Viene de arriba (vx>0 va a atras) -> robot hacia drcha del robot 
-          vx_w = 0; vy_w = ROBOT_SPEED; travel_dir = MOVE_RIGHT;
-        }
+         if (prev_hugged_wall == BACK) {
+             vx_w = -ROBOT_SPEED; vy_w = 0; travel_dir = BACKWARD;
+             hugged_wall = RIGHT;
+         } else {
+             vx_w = 0; vy_w = -ROBOT_SPEED; travel_dir = MOVE_RIGHT;
+             hugged_wall = BACK;
+         }
       } else if (wall_F && wall_R) { // 2 Sup drcha
-        if (last_vy > 0) { // Viene de izqda -> robot hacia alante del robot
-          vx_w = -ROBOT_SPEED; vy_w = 0; travel_dir = FORWARD;
-        } else {           // Viene de abajo -> robot hacia drcha del robot
-          vx_w = 0; vy_w = ROBOT_SPEED; travel_dir = MOVE_RIGHT;
-        }
+         if (prev_hugged_wall == FRONT) {
+             vx_w = ROBOT_SPEED; vy_w = 0; travel_dir = FORWARD;
+             hugged_wall = RIGHT;
+         } else {
+             vx_w = 0; vy_w = -ROBOT_SPEED; travel_dir = MOVE_RIGHT;
+             hugged_wall = FRONT;
+         }
       } else if (wall_B && wall_L) { // 3 Inf izqda
-        if (last_vy < 0) { // Viene de drcha -> robot hacia atras del robot
-          vx_w = ROBOT_SPEED; vy_w = 0; travel_dir = BACKWARD;
-        } else {           // Viene de arriba -> robot hacia izqda del robot
-          vx_w = 0; vy_w = -ROBOT_SPEED; travel_dir = MOVE_LEFT;
-        }
+         if (prev_hugged_wall == BACK) {
+             vx_w = -ROBOT_SPEED; vy_w = 0; travel_dir = BACKWARD;
+             hugged_wall = LEFT;
+         } else {
+             vx_w = 0; vy_w = ROBOT_SPEED; travel_dir = MOVE_LEFT;
+             hugged_wall = BACK;
+         }
       }
+      //} VMP
 
-      // Actualizar pared seguida según dirección de movimiento
-      if (std::abs(vx_w) > 0) {
-        hugged_wall = wall_L ? LEFT : (wall_R ? RIGHT : hugged_wall);
-      } else if (std::abs(vy_w) > 0) {
-        hugged_wall = wall_F ? FRONT : (wall_B ? BACK : hugged_wall);
-      }
-
-      // Salida del corner cuando no hay ninguna pared
-      if (!wall_F && !wall_B && !wall_L && !wall_R) {
-        current_state = LIBRE;
-        hugged_wall = NONE;
+      // Salida del corner cuando dejamos de ver alguna de las paredes interiores
+      if (!((wall_F && wall_L) || (wall_F && wall_R) || (wall_B && wall_L) || (wall_B && wall_R))) {
+        current_state = SIGUIENDO_PARED;
       }
       break;
 
