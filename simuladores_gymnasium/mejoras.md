@@ -1,6 +1,7 @@
 # Opciones de implementación — Práctica Gymnasium (Q-Learning y RL)
 
-Guía de estudio sobre qué técnicas de aprendizaje por refuerzo se pueden implementar en esta práctica, ordenadas de MEJOR a PEOR opción según su valor en la robótica industrial real, su viabilidad en este entorno discreto y su impacto en la evaluación.
+Guía de estudio sobre qué técnicas implementar, ordenadas según **relevancia industrial actual** (2024-2026)
+y **viabilidad real en este entorno discreto CSV**.
 
 ---
 
@@ -16,51 +17,94 @@ Guía de estudio sobre qué técnicas de aprendizaje por refuerzo se pueden impl
 
 ---
 
-## Técnicas implementables (Ordenadas de MEJOR a PEOR opción para esta práctica)
+## Contexto: ¿qué se usa realmente en industria hoy?
 
-### 1. Reward Shaping (La opción más recomendada)
+Los algoritmos más desplegados en robótica industrial, videojuegos y sistemas autónomos en 2024-2026 son:
 
-> **Uso industrial**: Crítico en robótica y navegación autónoma para acelerar el aprendizaje cuando la recompensa nativa es escasa.
-> **Por qué elegirla**: En la robótica industrial real, los robots rara vez reciben recompensas nativas constantes; los ingenieros deben "esculpir" estas señales. Para esta práctica, modificar la recompensa en base a la distancia a la meta es elegante, se implementa sobre tu entorno actual sin romper el algoritmo tabular, y tiene un alto impacto en la nota por solo 1 hora de esfuerzo estimado.
+| Algoritmo | Empresas que lo usan | Tipo |
+|---|---|---|
+| **PPO** (Proximal Policy Optimization) | OpenAI, NVIDIA Isaac Lab, Boston Dynamics | Policy Gradient, continuo |
+| **SAC** (Soft Actor-Critic) | Universal Robots, DeepMind, Anybotics | Actor-Critic, continuo |
+| **DQN / Double DQN** | videojuegos, trading HFT, logística | Value-based, discreto ✅ |
+| **SARSA** | sistemas on-line críticos (seguridad) | Value-based, discreto ✅ |
+| **Reward Shaping** | *todo el sector* (técnica, no algoritmo) | Transversal ✅ |
 
-```python
-# En lugar de solo r del entorno, añadir bonificación por acercarse a la meta
-distancia_actual   = np.sqrt((x - goalX)**2 + (y - goalY)**2)
-distancia_anterior = np.sqrt((x_prev - goalX)**2 + (y_prev - goalY)**2)
-r_shaped = r + 0.1 * (distancia_anterior - distancia_actual)
-```
+> PPO y SAC **no son viables aquí directamente** — requieren espacio de acciones continuo o aproximación de función (redes neuronales). Lo que sí encaja perfectamente con este entorno discreto son DQN, SARSA y Reward Shaping.
 
 ---
 
-### 2. SARSA (on-policy TD)
+## Técnicas ordenadas de MEJOR a PEOR opción para esta práctica
 
-> **Uso industrial**: Entornos donde el agente opera en producción durante el entrenamiento (robótica real, sistemas de recomendación on-line). Es más conservador que Q-Learning y evita "cliff-edges".
-> **Por qué elegirla**: Excelente si quieres entender cómo se entrenan robots que ya están operando en producción. A diferencia del Q-Learning que busca la política óptima asumiendo riesgos, SARSA aprende la política que realmente ejecuta. Su impacto en la nota es muy alto al requerir modificar el núcleo del algoritmo y compararlo.
+---
+
+### 🥇 1. SARSA (on-policy TD) — La más recomendada
+
+> **Uso industrial actual**: robótica en producción donde el agente aprende *mientras opera* (líneas de ensamblaje, AGVs en almacenes). Es el algoritmo elegido cuando un error durante el entrenamiento tiene coste real.
+> **Por qué es la mejor para esta práctica**: Cambia solo 3 líneas del script actual. Enseña el concepto on-policy vs off-policy, que es fundamental en RL moderno (SARSA → SAC es el mismo salto conceptual que Q-Learning → PPO). Compararla con Q-Learning en el mismo mapa da datos para justificar la elección.
 
 **Diferencia clave con Q-Learning:**
 
 | | Q-Learning (off-policy) | SARSA (on-policy) |
 |---|---|---|
-| Actualización | `max Q(s')` | `Q(s', a')` (acción real tomada) |
-| Política | Aprende la óptima aunque explore | Aprende la política que ejecuta |
-| Riesgo | Puede sobreestimar valores | Más conservador, evita cliff-edges |
+| Actualización | `max Q(s')` — acción óptima teórica | `Q(s', a')` — acción real tomada |
+| Política | Aprende la óptima aunque explore aleatoriamente | Aprende la política que realmente ejecuta |
+| Riesgo | Sobreestima valores en estados peligrosos | Más conservador, evita bordes de precipicio |
+| Industria | Simulación, planificación offline | Robots en producción, sistemas críticos |
 
 ```python
-# SARSA: elegir la siguiente acción ANTES de actualizar
-a1 = elegir_accion(Q, s1, epsilon)
+# SARSA: elegir la siguiente acción ANTES de actualizar (on-policy)
+epsilon = max(0.01, 1.0 - episodio / epis)   # ε decreciente
+a1 = np.argmax(Q[s1, :]) if np.random.rand() > epsilon else env.action_space.sample()
 Q[s, a] += eta * (r + gamma * Q[s1, a1] - Q[s, a])
 s, a = s1, a1
 ```
 
 ---
 
-### 3. Double Q-Learning
+### 🥈 2. Curva de aprendizaje + ε-decay — Rápida pero imprescindible
 
-> **Uso industrial**: Mejora estándar sobre DQN en aplicaciones financieras y de robótica. Reduce el sesgo de sobreestimación.
-> **Por qué elegirla**: En robótica avanzada, el sesgo de sobreestimación del Q-Learning clásico puede llevar a decisiones catastróficas. Double Q-Learning resuelve esto usando dos tablas Q cruzadas (`Q_A` y `Q_B`). Es una mejora estándar de la industria que encaja perfectamente en tu entorno discreto.
+> **Uso industrial actual**: *toda* práctica real de RL incluye curvas de convergencia. Sin ellas no puedes saber si el agente ha convergido, si está sobre-explorando o si los hiperparámetros son correctos.
+> **Por qué antes que le resto**: 30 minutos de trabajo, y **multiplica el valor de cualquier otro extra** — si implementas SARSA sin curva, no puedes compararlo con Q-Learning. Si haces Reward Shaping sin curva, no puedes ver si funciona.
 
 ```python
-# Double Q-Learning
+import matplotlib.pyplot as plt
+
+# ε-decay: exploración alta al inicio, explotación al final (estándar industrial)
+epsilon = max(0.01, 1.0 - episodio / epis)
+
+# Al final del entrenamiento:
+plt.plot(np.convolve(recompensas_por_episodio, np.ones(50)/50, mode='valid'))
+plt.xlabel('Episodio')
+plt.ylabel('Recompensa media (ventana 50)')
+plt.title('Curva de convergencia Q-Learning')
+plt.savefig('curva_aprendizaje.png')
+```
+
+---
+
+### 🥉 3. Reward Shaping — Muy usado, pero con trampa en este entorno
+
+> **Uso industrial actual**: *la técnica más usada en robótica real*. Boston Dynamics, NVIDIA Isaac Lab y cualquier empresa que entrene robots físicos diseña funciones de recompensa personalizadas. La recompensa nativa (llegaste/no llegaste) es demasiado escasa para convergencia rápida.
+> **Advertencia importante para esta práctica**: el entorno `gymnasium-csv` encapsula las coordenadas. No tienes acceso directo a `x`, `y` — tienes que extraerlos del dict `info` que devuelve `step()`, concretamente `info['distance']`. El snippet naïve con `x_prev` requiere guardar el estado anterior manualmente.
+
+```python
+# Reward Shaping usando el distance del info dict (disponible en gymnasium-csv)
+s1, r, terminado, _, info = env.step(accion)
+distancia_nueva     = info['distance']
+distancia_anterior  = distancia_guardada   # guardar en variable externa
+r_shaped = r + 0.5 * (distancia_anterior - distancia_nueva)   # bonus por acercarse
+distancia_guardada  = distancia_nueva
+```
+
+---
+
+### 4. Double Q-Learning — Estándar de la industria, efecto limitado aquí
+
+> **Uso industrial actual**: mejora estándar incluida en prácticamente todos los frameworks de DQN (Stable-Baselines3, RLlib, Dopamine). Es el default en producción sobre Q-Learning clásico.
+> **Honestidad**: en un mapa 12×12 con recompensas simples, **el sesgo de sobreestimación es negligible**. Funciona, es correcto implementarlo, pero no verás diferencia empírica notable — lo cual dificulta justificarlo con datos en la memoria de la práctica.
+
+```python
+# Double Q-Learning: dos tablas cruzadas
 if np.random.rand() < 0.5:
     a_best = np.argmax(Q_A[s1, :])
     Q_A[s, a] += eta * (r + gamma * Q_B[s1, a_best] - Q_A[s, a])
@@ -71,63 +115,40 @@ else:
 
 ---
 
-### 4. Mejoras operativas al Q-Learning actual
+### 5. Mejoras operativas menores
 
-> **Uso industrial**: Cualquier sistema con espacio de estados discreto y pequeño (robots industriales simples, videojuegos retro, trading de baja frecuencia).
-> **Por qué elegirlas**: Son modificaciones seguras y fundamentales para consolidar tu base y sumar puntos rápidos en la rúbrica (hasta 7.5% por extras de Gymnasium y 2.5% por extras de programación).
-
-| Mejora | Descripción | Dificultad |
+| Mejora | Descripción | Esfuerzo |
 |---|---|---|
-| **Decaimiento de epsilon** | En lugar de ruido gaussiano, usar ε que decae de 1.0 a 0.01 a lo largo de los episodios | ⭐ |
-| **Curva de aprendizaje** | Gráfica con `matplotlib` de recompensa media por episodio | ⭐ |
-| **Múltiples mapas** | Entrenar en varios CSV y comparar convergencia | ⭐⭐ |
-| **Comparativa de hiperparámetros** | Barrer valores de `η` y `γ` y mostrar el efecto en la convergencia | ⭐⭐ |
-| **Guardar/cargar Q-Table** | `np.save` / `np.load` para reutilizar el entrenamiento | ⭐ |
+| **Múltiples mapas** | Entrenar en 2-3 CSV distintos y comparar pasos hasta meta | ⭐⭐ |
+| **Hiperparámetro sweep** | Barrer `η` y `γ`, mostrar efecto en convergencia | ⭐⭐ |
+| **Guardar/cargar Q-Table** | `np.save` / `np.load` para no reentrenar | ⭐ |
+| **`argparse`** | Pasar mapa, episodios, eta, gamma por CLI | ⭐ |
 
 ---
 
-### 5. Q-Learning con replay buffer (DQN simplificado)
+### 6. Policy Gradient (REINFORCE) — Descartada para esta práctica
 
-> **Uso industrial**: Base de DeepMind's DQN (Atari, AlphaGo derivados). Se usa en robótica con espacio de estados grande.
-> **Por qué relegarla**: Aunque es un concepto fundacional clave, para un mapa pequeño en CSV es una sobreingeniería innecesaria. Guarda tuplas `(s, a, r, s')` en un buffer para romper la correlación temporal, pero el esfuerzo de implementación no compensa el aprendizaje práctico en tu entorno actual en comparación con Reward Shaping o SARSA.
-
----
-
-### 6. Policy Gradient (REINFORCE) — La peor opción para este entorno
-
-> **Uso industrial**: Estándar actual en LLMs (RLHF), robótica continua (MuJoCo), juegos complejos. 
-> **Por qué relegarla**: Paradójicamente, aunque es el estándar actual absoluto en la industria, es la peor opción para esta práctica específica. No es un método tabular; aprende mapeando estados a probabilidades mediante redes neuronales, lo cual no aplica directamente a tu entorno CSV sin introducir frameworks complejos (como PyTorch) que se escapan del objetivo de la práctica.
-
-```python
-# La política es una red neuronal que mapea estado → probabilidad de cada acción
-policy_net = torch.nn.Sequential(
-    torch.nn.Linear(n_states, 64),
-    torch.nn.ReLU(),
-    torch.nn.Linear(64, n_actions),
-    torch.nn.Softmax(dim=-1)
-)
-```
+> **Uso industrial actual**: es el estándar absoluto hoy (PPO, SAC, RLHF en LLMs) pero **no es viable aquí**. Requiere función de aproximación (red neuronal), framework adicional (PyTorch/TensorFlow) y espacio de estados representado como vector, no como índice entero. El esfuerzo de adaptación supera con creces el beneficio en nota.
 
 ---
 
-## Resumen de opciones recomendadas para la práctica
+## Tabla resumen — ordenada por ratio impacto/esfuerzo
 
-| Opción | Tipo de extra | Esfuerzo estimado | Impacto en nota |
-|---|---|---|---|
-| Reward Shaping | Gymnasium | 1h | Alto |
-| SARSA + comparativa con Q-Learning | Gymnasium | 1–2h | Muy alto |
-| Double Q-Learning | Gymnasium | 1–2h | Alto |
-| Curva de aprendizaje + métricas | Gymnasium | 30 min | Alto (muy visual) |
-| Múltiples mapas + comparativa | Gymnasium | 1h | Alto |
-| Decaimiento de epsilon + hiperparámetros | Gymnasium | 1h | Alto |
-| Guardar/cargar Q-Table | Programación general | 20 min | Medio |
-| `argparse` para parámetros por CLI | Programación general | 20 min | Medio |
+| Opción | Tipo | Esfuerzo | Impacto en nota | Uso industrial real |
+|---|---|---|---|---|
+| Curva de aprendizaje + ε-decay | Gymnasium | 30 min | ⭐⭐⭐ Alto | ✅ Imprescindible en cualquier proyecto |
+| SARSA + comparativa | Gymnasium | 1–2h | ⭐⭐⭐ Muy alto | ✅ Robótica en producción |
+| Reward Shaping | Gymnasium | 1h | ⭐⭐⭐ Alto | ✅ Universal en robótica real |
+| Double Q-Learning | Gymnasium | 1–2h | ⭐⭐ Medio-alto | ✅ Estándar DQN, efecto limitado aquí |
+| Múltiples mapas | Gymnasium | 1h | ⭐⭐ Medio-alto | ✅ Validación estándar |
+| `argparse` + guardar Q-Table | Prog. general | 40 min | ⭐ Medio | ✅ Ingeniería de software básica |
 
 ---
 
 ## Referencias
 
-- Sutton & Barto — *Reinforcement Learning: An Introduction* (capítulos 6 y 7): referencia estándar de Q-Learning y SARSA
+- Sutton & Barto — *Reinforcement Learning: An Introduction* (cap. 6-7): Q-Learning y SARSA
 - [Gymnasium docs](https://gymnasium.farama.org/) — API oficial
-- [DeepMind DQN paper (2015)](https://www.nature.com/articles/nature14236) — origen del replay buffer y Double DQN
-- [OpenAI Spinning Up](https://spinningup.openai.com/) — guía práctica de algoritmos de RL modernos
+- [DeepMind DQN paper (2015)](https://www.nature.com/articles/nature14236) — Double DQN y replay buffer
+- [OpenAI Spinning Up](https://spinningup.openai.com/) — guía práctica de PPO, SAC y REINFORCE
+- [Stable-Baselines3](https://stable-baselines3.readthedocs.io/) — librería de referencia industrial para RL en Python
