@@ -61,7 +61,7 @@ s, a = s1, a1
 
 ---
 
-### 🥈 2. Curva de aprendizaje + ε-decay — Rápida pero imprescindible
+### 🥈 2. Curva de aprendizaje + ε-decay — Rápida pero imprescindible ✅ **ELEGIDA**
 
 > **Uso industrial actual**: *toda* práctica real de RL incluye curvas de convergencia. Sin ellas no puedes saber si el agente ha convergido, si está sobre-explorando o si los hiperparámetros son correctos.
 > **Por qué antes que le resto**: 30 minutos de trabajo, y **multiplica el valor de cualquier otro extra** — si implementas SARSA sin curva, no puedes compararlo con Q-Learning. Si haces Reward Shaping sin curva, no puedes ver si funciona.
