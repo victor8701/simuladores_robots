@@ -1,7 +1,6 @@
 # Opciones de implementación — Práctica Gymnasium (Q-Learning y RL)
 
-Guía de estudio sobre qué técnicas de aprendizaje por refuerzo se pueden implementar
-en esta práctica, ordenadas por complejidad, con contexto de uso industrial real.
+Guía de estudio sobre qué técnicas de aprendizaje por refuerzo se pueden implementar en esta práctica, ordenadas de MEJOR a PEOR opción según su valor en la robótica industrial real, su viabilidad en este entorno discreto y su impacto en la evaluación.
 
 ---
 
@@ -17,27 +16,26 @@ en esta práctica, ordenadas por complejidad, con contexto de uso industrial rea
 
 ---
 
-## Técnicas implementables (de menor a mayor complejidad)
+## Técnicas implementables (Ordenadas de MEJOR a PEOR opción para esta práctica)
 
-### 1. Mejoras al Q-Learning actual
+### 1. Reward Shaping (La opción más recomendada)
 
-> **Uso industrial**: cualquier sistema con espacio de estados discreto y pequeño (robots industriales simples, videojuegos retro, trading de baja frecuencia).
+> **Uso industrial**: Crítico en robótica y navegación autónoma para acelerar el aprendizaje cuando la recompensa nativa es escasa.
+> **Por qué elegirla**: En la robótica industrial real, los robots rara vez reciben recompensas nativas constantes; los ingenieros deben "esculpir" estas señales. Para esta práctica, modificar la recompensa en base a la distancia a la meta es elegante, se implementa sobre tu entorno actual sin romper el algoritmo tabular, y tiene un alto impacto en la nota por solo 1 hora de esfuerzo estimado.
 
-Mejoras directas sobre el script actual sin cambiar el algoritmo:
-
-| Mejora | Descripción | Dificultad |
-|---|---|---|
-| **Decaimiento de epsilon** | En lugar de ruido gaussiano, usar ε que decae de 1.0 a 0.01 a lo largo de los episodios | ⭐ |
-| **Curva de aprendizaje** | Gráfica con `matplotlib` de recompensa media por episodio | ⭐ |
-| **Guardar/cargar Q-Table** | `np.save` / `np.load` para reutilizar el entrenamiento | ⭐ |
-| **Múltiples mapas** | Entrenar en varios CSV y comparar convergencia | ⭐⭐ |
-| **Comparativa de hiperparámetros** | Barrer valores de `η` y `γ` y mostrar el efecto en la convergencia | ⭐⭐ |
+```python
+# En lugar de solo r del entorno, añadir bonificación por acercarse a la meta
+distancia_actual   = np.sqrt((x - goalX)**2 + (y - goalY)**2)
+distancia_anterior = np.sqrt((x_prev - goalX)**2 + (y_prev - goalY)**2)
+r_shaped = r + 0.1 * (distancia_anterior - distancia_actual)
+```
 
 ---
 
 ### 2. SARSA (on-policy TD)
 
-> **Uso industrial**: entornos donde el agente opera en producción durante el entrenamiento (robótica real, sistemas de recomendación on-line). Es más conservador que Q-Learning.
+> **Uso industrial**: Entornos donde el agente opera en producción durante el entrenamiento (robótica real, sistemas de recomendación on-line). Es más conservador que Q-Learning y evita "cliff-edges".
+> **Por qué elegirla**: Excelente si quieres entender cómo se entrenan robots que ya están operando en producción. A diferencia del Q-Learning que busca la política óptima asumiendo riesgos, SARSA aprende la política que realmente ejecuta. Su impacto en la nota es muy alto al requerir modificar el núcleo del algoritmo y compararlo.
 
 **Diferencia clave con Q-Learning:**
 
@@ -56,23 +54,10 @@ s, a = s1, a1
 
 ---
 
-### 3. Q-Learning con replay buffer (DQN simplificado)
+### 3. Double Q-Learning
 
-> **Uso industrial**: base de DeepMind's DQN (Atari, AlphaGo derivados). Se usa en robótica con espacio de estados grande.
-
-En entornos pequeños como este no es necesario, pero se puede implementar para demostrar el concepto:
-
-- Se guardan tuplas `(s, a, r, s')` en un buffer
-- En cada paso se entrena con un mini-batch aleatorio del buffer
-- Rompe la correlación temporal entre muestras consecutivas
-
----
-
-### 4. Double Q-Learning
-
-> **Uso industrial**: mejora estándar sobre DQN en aplicaciones financieras y de robótica. Reduce el sesgo de sobreestimación.
-
-Mantiene dos Q-Tables (`Q_A` y `Q_B`). En cada paso se actualiza una aleatoriamente usando la otra para evaluar:
+> **Uso industrial**: Mejora estándar sobre DQN en aplicaciones financieras y de robótica. Reduce el sesgo de sobreestimación.
+> **Por qué elegirla**: En robótica avanzada, el sesgo de sobreestimación del Q-Learning clásico puede llevar a decisiones catastróficas. Double Q-Learning resuelve esto usando dos tablas Q cruzadas (`Q_A` y `Q_B`). Es una mejora estándar de la industria que encaja perfectamente en tu entorno discreto.
 
 ```python
 # Double Q-Learning
@@ -86,26 +71,32 @@ else:
 
 ---
 
-### 5. Reward Shaping
+### 4. Mejoras operativas al Q-Learning actual
 
-> **Uso industrial**: crítico en robótica y navegación autónoma para acelerar el aprendizaje cuando la recompensa nativa es escasa.
+> **Uso industrial**: Cualquier sistema con espacio de estados discreto y pequeño (robots industriales simples, videojuegos retro, trading de baja frecuencia).
+> **Por qué elegirlas**: Son modificaciones seguras y fundamentales para consolidar tu base y sumar puntos rápidos en la rúbrica (hasta 7.5% por extras de Gymnasium y 2.5% por extras de programación).
 
-Modificar la función de recompensa para que el agente reciba señales más informativas:
-
-```python
-# En lugar de solo r del entorno, añadir bonificación por acercarse a la meta
-distancia_actual   = np.sqrt((x - goalX)**2 + (y - goalY)**2)
-distancia_anterior = np.sqrt((x_prev - goalX)**2 + (y_prev - goalY)**2)
-r_shaped = r + 0.1 * (distancia_anterior - distancia_actual)
-```
+| Mejora | Descripción | Dificultad |
+|---|---|---|
+| **Decaimiento de epsilon** | En lugar de ruido gaussiano, usar ε que decae de 1.0 a 0.01 a lo largo de los episodios | ⭐ |
+| **Curva de aprendizaje** | Gráfica con `matplotlib` de recompensa media por episodio | ⭐ |
+| **Múltiples mapas** | Entrenar en varios CSV y comparar convergencia | ⭐⭐ |
+| **Comparativa de hiperparámetros** | Barrer valores de `η` y `γ` y mostrar el efecto en la convergencia | ⭐⭐ |
+| **Guardar/cargar Q-Table** | `np.save` / `np.load` para reutilizar el entrenamiento | ⭐ |
 
 ---
 
-### 6. Policy Gradient (REINFORCE) — avanzado
+### 5. Q-Learning con replay buffer (DQN simplificado)
 
-> **Uso industrial**: estándar actual en LLMs (RLHF), robótica continua (MuJoCo), juegos complejos. No es tabular: aprende directamente la política.
+> **Uso industrial**: Base de DeepMind's DQN (Atari, AlphaGo derivados). Se usa en robótica con espacio de estados grande.
+> **Por qué relegarla**: Aunque es un concepto fundacional clave, para un mapa pequeño en CSV es una sobreingeniería innecesaria. Guarda tuplas `(s, a, r, s')` en un buffer para romper la correlación temporal, pero el esfuerzo de implementación no compensa el aprendizaje práctico en tu entorno actual en comparación con Reward Shaping o SARSA.
 
-No aplica directamente al entorno CSV (espacio discreto pequeño), pero se puede implementar con una red neuronal mínima usando PyTorch:
+---
+
+### 6. Policy Gradient (REINFORCE) — La peor opción para este entorno
+
+> **Uso industrial**: Estándar actual en LLMs (RLHF), robótica continua (MuJoCo), juegos complejos. 
+> **Por qué relegarla**: Paradójicamente, aunque es el estándar actual absoluto en la industria, es la peor opción para esta práctica específica. No es un método tabular; aprende mapeando estados a probabilidades mediante redes neuronales, lo cual no aplica directamente a tu entorno CSV sin introducir frameworks complejos (como PyTorch) que se escapan del objetivo de la práctica.
 
 ```python
 # La política es una red neuronal que mapea estado → probabilidad de cada acción
@@ -123,14 +114,14 @@ policy_net = torch.nn.Sequential(
 
 | Opción | Tipo de extra | Esfuerzo estimado | Impacto en nota |
 |---|---|---|---|
+| Reward Shaping | Gymnasium | 1h | Alto |
+| SARSA + comparativa con Q-Learning | Gymnasium | 1–2h | Muy alto |
+| Double Q-Learning | Gymnasium | 1–2h | Alto |
 | Curva de aprendizaje + métricas | Gymnasium | 30 min | Alto (muy visual) |
 | Múltiples mapas + comparativa | Gymnasium | 1h | Alto |
-| SARSA + comparativa con Q-Learning | Gymnasium | 1–2h | Muy alto |
 | Decaimiento de epsilon + hiperparámetros | Gymnasium | 1h | Alto |
-| `argparse` para parámetros por CLI | Programación general | 20 min | Medio |
 | Guardar/cargar Q-Table | Programación general | 20 min | Medio |
-| Double Q-Learning | Gymnasium | 1–2h | Alto |
-| Reward Shaping | Gymnasium | 1h | Alto |
+| `argparse` para parámetros por CLI | Programación general | 20 min | Medio |
 
 ---
 
