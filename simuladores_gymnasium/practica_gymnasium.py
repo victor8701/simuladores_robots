@@ -22,6 +22,7 @@ import argparse
 import gymnasium as gym
 import gymnasium_csv                                          # Entorno personalizado basado en CSV
 from gymnasium.spaces import Discrete
+from collections import deque
 
 class BoxToDiscreteObservation(gym.ObservationWrapper):
     def __init__(self, env):
@@ -90,15 +91,28 @@ MAPAS = {
         # Diseño: laberinto grid denso con muchos pasillos y giros
         # Requiere más episodios para explorar el laberinto
         epis          = 50000,
-        max_pasos     = 1000,
+        max_pasos     = 3000,
         epsilon_decay = 0.999908,
+    ),
+    5: dict(
+        nombre        = 'Mapa gigante      (50×50)',
+        archivo       = 'map5.csv',
+        initX=1,  initY=1,
+        goalX=48, goalY=48,
+        cols          = 50,
+        # 300k episodios cortos (1500 pasos): el agente encuentra la meta
+        # con alta probabilidad durante la fase de exploración (ε~0.4),
+        # luego la explotación refina el camino óptimo.
+        epis          = 400000,
+        max_pasos     = 1500,
+        epsilon_decay = 0.999985,  # ε llega a 0.01 en ~ep 300k
     ),
 }
 
 parser = argparse.ArgumentParser(description='Q-Learning en mapa CSV con Gymnasium')
 parser.add_argument(
-    '--mapa', type=int, default=1, choices=[1, 2, 3, 4],
-    help='Mapa a usar: 1=del profesor (12×12)  2=mediano-T (20×20)  3=grande-C (30×30)  4=laberinto (30×27)'
+    '--mapa', type=int, default=1, choices=[1, 2, 3, 4, 5],
+    help='Mapa a usar: 1=del profesor (12×12)  2=mediano-T (20×20)  3=grande-C (30×30)  4=laberinto (30×27)  5=gigante (50×50)'
 )
 args = parser.parse_args()
 cfg = MAPAS[args.mapa]   # Configuración del mapa elegido
@@ -129,13 +143,34 @@ env_train_raw = gym.make(
 )
 env_train = BoxToDiscreteObservation(env_train_raw)   # Obs (fila,col) → índice entero
 
+# --- Precomputar distancias BFS a la meta para un Reward Shaping perfecto ---
+# Extraemos el grid del entorno (0=libre, 1=muro, 2=inicio, 3=meta)
+grid = env_train_raw.unwrapped.inFile
+rows, cols = grid.shape
+bfs_distances = np.full((rows, cols), np.inf)
+queue = deque([(META_X, META_Y)])
+bfs_distances[META_X, META_Y] = 0.0
+
+# Direcciones: 4 cardinales + 4 diagonales
+directions = [(0,1), (0,-1), (1,0), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)]
+
+while queue:
+    r, c = queue.popleft()
+    d = bfs_distances[r, c]
+    for dr, dc in directions:
+        nr, nc = r + dr, c + dc
+        if 0 <= nr < rows and 0 <= nc < cols and grid[nr, nc] != 1 and bfs_distances[nr, nc] == np.inf:
+            bfs_distances[nr, nc] = d + 1.0
+            queue.append((nr, nc))
+
 # ---------------------------------------------------------------------------
 # 2. INICIALIZACIÓN DE LA Q-TABLE
 # ---------------------------------------------------------------------------
 
 # Dimensiones: nS estados × nA acciones
 # nS = filas × columnas del mapa  |  nA = 8 (8 direcciones cardinales + diagonales)
-Q = np.ones([env_train.observation_space.n, env_train.action_space.n]) * 2.0
+# Inicialización en 0.0 (ahora usamos reward shaping en vez de puro optimismo)
+Q = np.zeros([env_train.observation_space.n, env_train.action_space.n])
 
 # ---------------------------------------------------------------------------
 # 3. PARÁMETROS DEL ALGORITMO Q-LEARNING
@@ -168,9 +203,10 @@ for episodio in range(epis):
     terminado = False
     paso = 0
 
-    # Distancia Manhattan inicial al objetivo (para reward shaping)
+    # Distancia BFS inicial al objetivo (para reward shaping)
     fila_s, col_s = divmod(s, COLS)
-    dist_ant = abs(fila_s - META_X) + abs(col_s - META_Y)
+    dist_ant = bfs_distances[fila_s, col_s]
+    if dist_ant == np.inf: dist_ant = 1000.0  # fallback por si acaso
 
     while not terminado and paso < max_pasos:
         paso += 1
@@ -186,16 +222,25 @@ for episodio in range(epis):
         # --- Ejecutamos la acción en el entorno ---
         s1, recompensa, terminado, _, _ = env_train.step(accion)
 
-        # --- Actualización Q-Table: regla de Bellman con Inicialización Optimista ---
-        # Como Q empieza en 2.0 (muy optimista), el agente explorará sistemáticamente
-        # las rutas desconocidas porque sus valores Q bajarán cuando no encuentren la meta.
-        # Esto evita crear mínimos locales y hace innecesario el "reward shaping".
-        
+        # Distancia nueva para reward shaping (usando BFS)
+        fila_s1, col_s1 = divmod(s1, COLS)
+        dist_nueva = bfs_distances[fila_s1, col_s1]
+        if dist_nueva == np.inf: dist_nueva = 1000.0
+
+        # --- Actualización Q-Table con Reward Shaping ---
         # El futuro es nulo si chocamos contra un muro o llegamos a la meta
         futuro = 0.0 if terminado else np.max(Q[s1, :])
         
-        # Penalización por cada paso dado (-0.01) para forzar el camino más corto
-        recompensa_paso = (recompensa - 0.01) if not terminado else recompensa
+        # Reward shaping basado en acercarse/alejarse de la meta
+        # El coeficiente escala con el tamaño del mapa para que el gradiente
+        # sea siempre dominante frente a la penalización de paso (-0.01)
+        shaping_k = 0.5   # aumentado de 0.4 a 0.5 para asegurar avance
+        if not terminado:
+            shaping = shaping_k * (dist_ant - dist_nueva)
+            # Penalización por cada paso dado (-0.01) + Shaping guiado
+            recompensa_paso = (recompensa - 0.01) + shaping
+        else:
+            recompensa_paso = recompensa
 
         Q[s, accion] = Q[s, accion] + eta * (
             recompensa_paso + gamma * futuro - Q[s, accion]
@@ -203,6 +248,7 @@ for episodio in range(epis):
 
         recompensa_total += recompensa   # Guardamos recompensa REAL (sin shaping)
         s = s1
+        dist_ant = dist_nueva
 
     recompensas_por_episodio.append(recompensa_total)
     epsilon = max(epsilon_fin, epsilon * epsilon_decay)   # Decay exponencial
@@ -351,7 +397,12 @@ terminado = False
 paso = 0
 env_inner = env_demo_raw.unwrapped   # GridWorldEnv sin wrappers (acceso a pygame)
 
-while not terminado and paso < 200:
+# Límite de pasos de la demo: proporcional a la distancia Manhattan inicial al objetivo.
+# Al menos 300 pasos y como máximo 2000 para mapas muy grandes.
+dist_inicial = abs(INIT_X - GOAL_X) + abs(INIT_Y - GOAL_Y)
+limite_demo = max(300, min(2000, dist_inicial * 6))
+
+while not terminado and paso < limite_demo:
     paso += 1
     pos_antes   = env_inner._agent_location.copy()
     accion      = int(np.argmax(Q[s, :]))           # Mejor acción según Q-table
