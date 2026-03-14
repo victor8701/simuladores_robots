@@ -312,6 +312,23 @@ env_demo = BoxToDiscreteObservation(env_demo_raw)
 
 s, _ = env_demo.reset()
 env_demo.render()   # Inicializa la ventana pygame (window, cellWidth, etc.)
+
+# Ajuste automático de zoom out para mapas grandes (como map5)
+env_inner = env_demo_raw.unwrapped
+if COLS >= 40:
+    # Forzamos un tamaño máximo para que quepa verticalmente en pantallas comunes
+    # y recalculamos el tamaño de la celda
+    MAX_H = 800
+    aspect_ratio = env_inner.inFile.shape[1] / env_inner.inFile.shape[0]
+    
+    env_inner.WINDOW_HEIGHT = MAX_H
+    env_inner.WINDOW_WIDTH = int(MAX_H * aspect_ratio)
+    env_inner.cellHeight = env_inner.WINDOW_HEIGHT / env_inner.inFile.shape[0]
+    env_inner.cellWidth = env_inner.WINDOW_WIDTH / env_inner.inFile.shape[1]
+    
+    # Redimensionar la ventana de PyGame ya creada
+    pygame.display.set_mode((env_inner.WINDOW_WIDTH, env_inner.WINDOW_HEIGHT))
+
 time.sleep(1.0)
 
 # ---------------------------------------------------------------------------
@@ -395,7 +412,6 @@ def animar_movimiento(env_inner, pos_desde, pos_hasta, n_frames=20, fps=60):
 print("Ejecutando solución...")
 terminado = False
 paso = 0
-env_inner = env_demo_raw.unwrapped   # GridWorldEnv sin wrappers (acceso a pygame)
 
 # Límite de pasos de la demo: proporcional a la distancia Manhattan inicial al objetivo.
 # Al menos 300 pasos y como máximo 2000 para mapas muy grandes.
