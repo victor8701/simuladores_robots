@@ -1,42 +1,27 @@
-# Laberinto Robot Gazebo
+# Workspace de Simuladores de Robots
 
-Simulación de navegación autónoma de un robot diferencial en Gazebo usando ROS 2. El robot navega desde su posición inicial hasta la esquina diagonalmente opuesta del mapa, implementando un algoritmo de seguimiento de paredes.
+Este repositorio contiene tres proyectos distintos enfocados en la navegación autónoma de robots utilizando tres simuladores diferentes: **Webots**, **Gazebo** y **Gymnasium**. 
 
-## Contenido
+El objetivo general es aprender, diseñar e implementar algoritmos clave en la robótica móvil, tales como algoritmos reactivos (Follow-Wall) y aprendizaje por refuerzo (Q-Learning) para resolver laberintos dinámicos y evitar obstáculos.
 
-- **my_node_cpp**: Controlador de navegación
-- **my_diffdrive_bringup**: Configuración de lanzamiento
-- **my_diffdrive_description**: Descripción URDF del robot
+## Estructura del Workspace
 
-## Funcionalidad
+El workspace está dividido en tres carpetas principales, correspondiendo a cada uno de los enfoques:
 
-El robot sigue un algoritmo Manhattan que:
-- Determina automáticamente el objetivo según su posición inicial
-- Detecta y navega alrededor de obstáculos
-- Maneja corners interiores y exteriores
-- Reorienta hacia la pared más cercana tras girar esquinas
+### 1. `simuladores_webots`
+**Tecnologías:** C, Webots Robot Simulator.
+**Objetivo:** Control a bajo nivel y algoritmos reactivos.
+**Descripción:** Implementa la navegación autónoma básica en un entorno 3D mediante C puro. Utiliza sensores de distancia infrarrojos para detectar paredes y algoritmos puramente reactivos para la evasión de colisiones.
 
-## Sensores Utilizados
+### 2. `simuladores_gazebo`
+**Tecnologías:** ROS 2 (Humble), C++, Gazebo Sim (Ignition).
+**Objetivo:** Ecosistema completo de robótica modular y control en base a odometría.
+**Descripción:** Construye una arquitectura moderna en ROS 2 orientada a nodos. Incluye descripciones de chasis con URDF, integración de un LIDAR de 8 haces, y un nodo en C++ que interpreta la odometría pura del mundo y el LIDAR simulado para recorrer esquinas exteriores/interiores limpiamente usando una máquina de estados compleja. Un vídeo completo demostrativo `video_gazebo.mp4` se encuentra en la raíz de esta subcarpeta.
 
-- **8 sensores ultrasónicos** (LaserScan): detección de obstáculos en tiempo real
-- **Odometría**: proporciona posición y orientación (yaw) del robot
-- **Sensores de contacto**: para recuperación ante colisiones
+### 3. `simuladores_gymnasium`
+**Tecnologías:** Python 3, Gymnasium, Q-Learning, Numpy, PyGame.
+**Objetivo:** Aprendizaje por Refuerzo (RL) e Inteligencia Artificial en grid-worlds discretos.
+**Descripción:** Sustituye el enfoque manual y reactivo de código "if-else" por un cerebro inteligente capaz de resolver topografías laberínticas complejas aprendiendo en entornos 2D. Se entrena un agente con el algoritmo Q-Learning implementando una Tabla-Q dinámica y "Reward Shaping" basado en Breadth-First Search (BFS) para converger resolviendo desde los mapas más básicos de 10x10 hasta mapas masivos de 50x50 celdas, esquivando automáticamente todos los muros.
 
-## Extras Implementados
-
-Dashboard interactivo con visualización en tiempo real de sensores ultrasónicos, máquina de estados con 5 estados (LIBRE, SIGUIENDO_PARED, INT_CORNER, FINDING_WALL, META_ALCANZADA), detección geométrica de esquinas, transformación de coordenadas mundo-robot.
-
-## Requisitos Gazebo
-
-- Gazebo Sim 7.0+ con soporte para plugins de sensores
-- Modelos de robot con diferentialDrive y sensorPlugins configurados
-- Topics de LaserScan para los 8 sensores ultrasónicos
-
-## Requisitos del Sistema
-
-- ROS 2 Humble
-- Gazebo Sim
-- Compilador GCC/G++ con C++17
-- CMake 3.16+, colcon
-
-Autor: Victor Martin Parra
+---
+**Autor:** Victor Martin Parra
