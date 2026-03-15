@@ -27,10 +27,10 @@ Utiliza la API moderna **OpenAI Gymnasium** y NumPy para definir y resolver los 
 Puedes ver al agente en acción navegando por los laberintos a continuación:
 
 **Resolución del Mapa Laberinto (map4.mp4)**
-<video src="map4.mp4" width="100%" controls></video>
+![Resolución Mapa 4](map4.mp4)
 
 **Resolución del Mapa Gigante (map5.mp4)**
-<video src="map5.mp4" width="100%" controls></video>
+![Resolución Mapa 5](map5.mp4)
 
 ![Curva de Aprendizaje del Entrenamiento en Mapa Gigante 50x50](curva_aprendizaje_mapa5.png)
 
