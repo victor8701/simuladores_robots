@@ -19,6 +19,7 @@ Sistema de coordenadas del entorno:
 
 import time
 import argparse
+import os
 import gymnasium as gym
 import gymnasium_csv                                          # Entorno personalizado basado en CSV
 from gymnasium.spaces import Discrete
@@ -90,7 +91,7 @@ MAPAS = {
         cols          = 30,   # 30 columnas en cada fila del CSV
         # Diseño: laberinto grid denso con muchos pasillos y giros
         # Requiere más episodios para explorar el laberinto
-        epis          = 50000,
+        epis          = 100000,
         max_pasos     = 3000,
         epsilon_decay = 0.999908,
     ),
@@ -103,7 +104,7 @@ MAPAS = {
         # 300k episodios cortos (1500 pasos): el agente encuentra la meta
         # con alta probabilidad durante la fase de exploración (ε~0.4),
         # luego la explotación refina el camino óptimo.
-        epis          = 400000,
+        epis          = 350000,
         max_pasos     = 1500,
         epsilon_decay = 0.999985,  # ε llega a 0.01 en ~ep 300k
     ),
@@ -113,6 +114,10 @@ parser = argparse.ArgumentParser(description='Q-Learning en mapa CSV con Gymnasi
 parser.add_argument(
     '--mapa', type=int, default=1, choices=[1, 2, 3, 4, 5],
     help='Mapa a usar: 1=del profesor (12×12)  2=mediano-T (20×20)  3=grande-C (30×30)  4=laberinto (30×27)  5=gigante (50×50)'
+)
+parser.add_argument(
+    '--modo', type=str, default='entrenar', choices=['entrenar', 'jugar'],
+    help='Modo: "entrenar" (aprende y guarda la tabla Q) o "jugar" (carga la tabla Q guardada previamente)'
 )
 args = parser.parse_args()
 cfg = MAPAS[args.mapa]   # Configuración del mapa elegido
@@ -187,111 +192,125 @@ epsilon_fin    = 0.01
 recompensas_por_episodio = []   # Historial de recompensas reales para la gráfica
 
 # ---------------------------------------------------------------------------
-# 4. BUCLE DE ENTRENAMIENTO
+# 4. BUCLE DE ENTRENAMIENTO O CARGA DE DATOS
 # ---------------------------------------------------------------------------
+qtable_file = f'qtable_map{args.mapa}.npy'
 
-print(f"Entrenando con Q-Learning (sin ventana gráfica)...")
-print(f"  Episodios: {epis}  |  eta={eta}  |  gamma={gamma}  |  ε: {epsilon_inicio}→{epsilon_fin} (exp)")
-print("-" * 65)
+if args.modo == 'jugar':
+    print(f"Modo jugar: cargando la Tabla Q desde '{qtable_file}'...")
+    if os.path.exists(qtable_file):
+        Q = np.load(qtable_file)
+        print("Tabla Q cargada correctamente.")
+    else:
+        print(f"Error: No se encontró el archivo '{qtable_file}'. Debes entrenar primero usando '--modo entrenar'.")
+        exit(1)
+else:
+    print(f"Entrenando con Q-Learning (sin ventana gráfica)...")
+    print(f"  Episodios: {epis}  |  eta={eta}  |  gamma={gamma}  |  ε: {epsilon_inicio}→{epsilon_fin} (exp)")
+    print("-" * 65)
 
-epsilon = epsilon_inicio
-intervalo_print = max(500, epis // 20)   # Imprimimos ~20 líneas de progreso
+    epsilon = epsilon_inicio
+    intervalo_print = max(500, epis // 20)   # Imprimimos ~20 líneas de progreso
 
-for episodio in range(epis):
-    s, _ = env_train.reset()
-    recompensa_total = 0
-    terminado = False
-    paso = 0
+    for episodio in range(epis):
+        s, _ = env_train.reset()
+        recompensa_total = 0
+        terminado = False
+        paso = 0
 
-    # Distancia BFS inicial al objetivo (para reward shaping)
-    fila_s, col_s = divmod(s, COLS)
-    dist_ant = bfs_distances[fila_s, col_s]
-    if dist_ant == np.inf: dist_ant = 1000.0  # fallback por si acaso
+        # Distancia BFS inicial al objetivo (para reward shaping)
+        fila_s, col_s = divmod(s, COLS)
+        dist_ant = bfs_distances[fila_s, col_s]
+        if dist_ant == np.inf: dist_ant = 1000.0  # fallback por si acaso
 
-    while not terminado and paso < max_pasos:
-        paso += 1
+        while not terminado and paso < max_pasos:
+            paso += 1
 
-        # --- Selección de acción: ε-greedy con decaimiento exponencial ---
-        # Con probabilidad ε tomamos una acción aleatoria (exploración).
-        # Con probabilidad 1-ε tomamos la mejor acción conocida (explotación).
-        if np.random.rand() < epsilon:
-            accion = env_train.action_space.sample()   # Exploración uniforme
-        else:
-            accion = int(np.argmax(Q[s, :]))           # Explotación de la Q-table
+            # --- Selección de acción: ε-greedy con decaimiento exponencial ---
+            # Con probabilidad ε tomamos una acción aleatoria (exploración).
+            # Con probabilidad 1-ε tomamos la mejor acción conocida (explotación).
+            if np.random.rand() < epsilon:
+                accion = env_train.action_space.sample()   # Exploración uniforme
+            else:
+                accion = int(np.argmax(Q[s, :]))           # Explotación de la Q-table
 
-        # --- Ejecutamos la acción en el entorno ---
-        s1, recompensa, terminado, _, _ = env_train.step(accion)
+            # --- Ejecutamos la acción en el entorno ---
+            s1, recompensa, terminado, _, _ = env_train.step(accion)
 
-        # Distancia nueva para reward shaping (usando BFS)
-        fila_s1, col_s1 = divmod(s1, COLS)
-        dist_nueva = bfs_distances[fila_s1, col_s1]
-        if dist_nueva == np.inf: dist_nueva = 1000.0
+            # Distancia nueva para reward shaping (usando BFS)
+            fila_s1, col_s1 = divmod(s1, COLS)
+            dist_nueva = bfs_distances[fila_s1, col_s1]
+            if dist_nueva == np.inf: dist_nueva = 1000.0
 
-        # --- Actualización Q-Table con Reward Shaping ---
-        # El futuro es nulo si chocamos contra un muro o llegamos a la meta
-        futuro = 0.0 if terminado else np.max(Q[s1, :])
-        
-        # Reward shaping basado en acercarse/alejarse de la meta
-        # El coeficiente escala con el tamaño del mapa para que el gradiente
-        # sea siempre dominante frente a la penalización de paso (-0.01)
-        shaping_k = 0.5   # aumentado de 0.4 a 0.5 para asegurar avance
-        if not terminado:
-            shaping = shaping_k * (dist_ant - dist_nueva)
-            # Penalización por cada paso dado (-0.01) + Shaping guiado
-            recompensa_paso = (recompensa - 0.01) + shaping
-        else:
-            recompensa_paso = recompensa
+            # --- Actualización Q-Table con Reward Shaping ---
+            # El futuro es nulo si chocamos contra un muro o llegamos a la meta
+            futuro = 0.0 if terminado else np.max(Q[s1, :])
+            
+            # Reward shaping basado en acercarse/alejarse de la meta
+            # El coeficiente escala con el tamaño del mapa para que el gradiente
+            # sea siempre dominante frente a la penalización de paso (-0.01)
+            shaping_k = 0.5   # aumentado de 0.4 a 0.5 para asegurar avance
+            if not terminado:
+                shaping = shaping_k * (dist_ant - dist_nueva)
+                # Penalización por cada paso dado (-0.01) + Shaping guiado
+                recompensa_paso = (recompensa - 0.01) + shaping
+            else:
+                recompensa_paso = recompensa
 
-        Q[s, accion] = Q[s, accion] + eta * (
-            recompensa_paso + gamma * futuro - Q[s, accion]
-        )
+            Q[s, accion] = Q[s, accion] + eta * (
+                recompensa_paso + gamma * futuro - Q[s, accion]
+            )
 
-        recompensa_total += recompensa   # Guardamos recompensa REAL (sin shaping)
-        s = s1
-        dist_ant = dist_nueva
+            recompensa_total += recompensa   # Guardamos recompensa REAL (sin shaping)
+            s = s1
+            dist_ant = dist_nueva
 
-    recompensas_por_episodio.append(recompensa_total)
-    epsilon = max(epsilon_fin, epsilon * epsilon_decay)   # Decay exponencial
+        recompensas_por_episodio.append(recompensa_total)
+        epsilon = max(epsilon_fin, epsilon * epsilon_decay)   # Decay exponencial
 
-    if (episodio + 1) % intervalo_print == 0:
-        media = np.mean(recompensas_por_episodio[-intervalo_print:])
-        print(f"  Ep {episodio+1:>6}/{epis}  |  Recompensa media: {media:.3f}  |  ε={epsilon:.4f}")
+        if (episodio + 1) % intervalo_print == 0:
+            media = np.mean(recompensas_por_episodio[-intervalo_print:])
+            print(f"  Ep {episodio+1:>6}/{epis}  |  Recompensa media: {media:.3f}  |  ε={epsilon:.4f}")
 
-env_train.close()
-print("-" * 65)
-print(f"Entrenamiento completado. Recompensa media total: {np.mean(recompensas_por_episodio):.3f}")
+    env_train.close()
+    print("-" * 65)
+    print(f"Entrenamiento completado. Recompensa media total: {np.mean(recompensas_por_episodio):.3f}")
 
-# ---------------------------------------------------------------------------
-# 4b. GRÁFICA DE CONVERGENCIA (curva de aprendizaje)
-# ---------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------
+    # 4b. GRÁFICA DE CONVERGENCIA (curva de aprendizaje)
+    # ---------------------------------------------------------------------------
 
-ventana = max(50, epis // 50)   # Ventana de la media móvil proporcional a los episodios
-media_movil = np.convolve(
-    recompensas_por_episodio,
-    np.ones(ventana) / ventana,
-    mode='valid'   # 'valid': solo valores donde la ventana está completa
-)
+    ventana = max(50, epis // 50)   # Ventana de la media móvil proporcional a los episodios
+    media_movil = np.convolve(
+        recompensas_por_episodio,
+        np.ones(ventana) / ventana,
+        mode='valid'   # 'valid': solo valores donde la ventana está completa
+    )
 
-fig, ax = plt.subplots(figsize=(12, 5))
-ax.plot(recompensas_por_episodio, color='lightsteelblue', alpha=0.3, label='Recompensa por episodio')
-ax.plot(
-    range(ventana - 1, epis),
-    media_movil,
-    color='steelblue', linewidth=2.5, label=f'Media móvil (ventana={ventana})'
-)
-ax.set_xlabel('Episodio')
-ax.set_ylabel('Recompensa acumulada (real, sin shaping)')
-ax.set_title(
-    f'Convergencia Q-Learning — {cfg["nombre"]}  |  '
-    f'η={eta}  γ={gamma}  ε-exp: {epsilon_inicio}→{epsilon_fin}'
-)
-ax.legend()
-ax.grid(True, alpha=0.3)
-plt.tight_layout()
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.plot(recompensas_por_episodio, color='lightsteelblue', alpha=0.3, label='Recompensa por episodio')
+    ax.plot(
+        range(ventana - 1, epis),
+        media_movil,
+        color='steelblue', linewidth=2.5, label=f'Media móvil (ventana={ventana})'
+    )
+    ax.set_xlabel('Episodio')
+    ax.set_ylabel('Recompensa acumulada (real, sin shaping)')
+    ax.set_title(
+        f'Convergencia Q-Learning — {cfg["nombre"]}  |  '
+        f'η={eta}  γ={gamma}  ε-exp: {epsilon_inicio}→{epsilon_fin}'
+    )
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
 
-nombre_grafica = f'curva_aprendizaje_mapa{args.mapa}.png'   # Archivo distinto por mapa
-plt.savefig(nombre_grafica, dpi=150)
-print(f"\nGráfica de convergencia guardada en '{nombre_grafica}'")
+    nombre_grafica = f'curva_aprendizaje_mapa{args.mapa}.png'   # Archivo distinto por mapa
+    plt.savefig(nombre_grafica, dpi=150)
+    print(f"\nGráfica de convergencia guardada en '{nombre_grafica}'")
+    
+    # Guardar la tabla Q entrenada
+    np.save(qtable_file, Q)
+    print(f"Tabla Q guardada exitosamente en '{qtable_file}'")
 
 # ---------------------------------------------------------------------------
 # 5. ENTORNO DE DEMOSTRACIÓN (con ventana gráfica Pygame)
