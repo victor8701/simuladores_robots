@@ -23,6 +23,8 @@ De acuerdo con la rúbrica de evaluación de la asignatura, se han desarrollado 
 ## Descripción General
 Utiliza la API moderna **OpenAI Gymnasium** y NumPy para definir y resolver los entornos. El script `practica_gymnasium.py` instancia un mapeado CSV en pantalla y entrena a un agente para que viaje con éxito desde la celda de origen a la celda meta castigando cualquier choque contra paredes. Al finalizar se muestra visualmente usando PyGame la ruta óptima aprendida y se renderiza un gráfico de la convergencia de la recompensa para verificar la fiabilidad del entrenamiento.
 
+![Curva de Aprendizaje del Entrenamiento en Mapa Gigante 50x50](curva_aprendizaje_mapa5.png)
+
 ## Algoritmo Utilizado
 El núcleo es el algoritmo **Q-Learning Tabular**. 
 Debido a la escasez natural de puntos de recompensa ("Sparse Rewards") del laberinto (sólo se cobra al pisar la meta final), aplicamos **Potencial-Based Reward Shaping**:
