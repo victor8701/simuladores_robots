@@ -13,6 +13,7 @@ log/
 *.log
 _*
 *.bak
+aaa.md
 
 simuladores_gazebo/my_diffdrive_bringup/
 simuladores_gazebo/my_diffdrive_description/
